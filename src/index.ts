@@ -3,7 +3,8 @@ import morgan from 'morgan';
 import { SuccessResponse } from './types/types/types';
 import getHealthReport from './config/serverHealth';
 import cors from 'cors';
-
+import connectDatabase from './config/database';
+import cloudRoutes from "./routes/cloudinary.routes"; 
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,6 +17,17 @@ app.use(cors(
     }
 ));
 
+app.use('/cloud', cloudRoutes);
+
+(async()=>{
+    try {
+        await connectDatabase(); 
+      
+    }catch(error: any){
+        console.log(`Error: ${error.message}`);
+        process.exit(1);
+    }
+})(); 
 
 app.get('/', (req:Request, res:Response) => {
     const response : SuccessResponse = {
