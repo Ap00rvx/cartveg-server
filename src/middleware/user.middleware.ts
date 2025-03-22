@@ -10,14 +10,15 @@ interface AuthRequest extends Request {
 // Middleware to verify JWT token from cookies
 export const authenticateUser = (req: AuthRequest, res: Response, next: NextFunction): void => {
     try {
-        const token = req.cookies?.token; // Extract token from cookies
+        const token =  req.headers.authorization?.split(" ")[1];
 
         if (!token) {
             res.status(401).json({ msg: "Unauthorized: No token provided" });
             return;
         }
 
-        // Verify JWT
+        // Verify JWT'
+        console.log("Token:", token);
         const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
         console.log("Decoded token:", decoded);
         (req as any).user = decoded; // Attach user data to request

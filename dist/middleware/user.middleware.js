@@ -11,12 +11,13 @@ dotenv_1.default.config();
 const authenticateUser = (req, res, next) => {
     var _a;
     try {
-        const token = (_a = req.cookies) === null || _a === void 0 ? void 0 : _a.token; // Extract token from cookies
+        const token = (_a = req.headers.authorization) === null || _a === void 0 ? void 0 : _a.split(" ")[1];
         if (!token) {
             res.status(401).json({ msg: "Unauthorized: No token provided" });
             return;
         }
-        // Verify JWT
+        // Verify JWT'
+        console.log("Token:", token);
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
         console.log("Decoded token:", decoded);
         req.user = decoded; // Attach user data to request
