@@ -12,10 +12,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getProducts = exports.createMultipleProducts = exports.createProduct = void 0;
+exports.searchProducts = exports.getProducts = exports.createMultipleProducts = exports.createProduct = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
-// create a new Product
-// Create a New Product
+const node_cache_1 = __importDefault(require("node-cache"));
 const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         // Destructure request body
@@ -207,3 +206,38 @@ const getProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
     }
 });
 exports.getProducts = getProducts;
+// Initialize cache with 10 minutes expiration
+const productCache = new node_cache_1.default({ stdTTL: 900, checkperiod: 920 });
+const searchProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const query = (_a = req.query.query) === null || _a === void 0 ? void 0 : _a.trim().toLowerCase();
+        if (!query) {
+            res.status(400).json({ message: "Query parameter is required" });
+            return;
+        }
+        // Check cache first
+        const cachedProducts = productCache.get("allProducts");
+        if (cachedProducts) {
+            console.log("Serving from cache");
+            const filteredProducts = cachedProducts.filter(product => product.name.toLowerCase().includes(query)).slice(0, 20);
+            res.status(200).json({ statusCode: 200, data: filteredProducts });
+            return;
+        }
+        console.log("Fetching from database...");
+        // Fetch from DB and cache it
+        const products = yield product_model_1.default.find();
+        productCache.set("allProducts", products);
+        // Filter results
+        const filteredProducts = products.filter(product => product.name.toLowerCase().includes(query)).slice(0, 20);
+        res.status(200).json({ statusCode: 200, data: filteredProducts });
+    }
+    catch (err) {
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.searchProducts = searchProducts;

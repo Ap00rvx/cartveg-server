@@ -2,8 +2,7 @@ import Product from "../models/product.model";
 import { Request, Response } from "express";
 import { ErrorResponse, InterServerError, SuccessResponse } from "../types/types/types";
 import { SortOrder } from "mongoose";
-// create a new Product
-// Create a New Product
+import NodeCache from "node-cache";
 const createProduct = async (req: Request, res: Response): Promise<void> => {
     try {
         // Destructure request body
@@ -83,7 +82,6 @@ const createProduct = async (req: Request, res: Response): Promise<void> => {
         res.status(500).json(internalServerErrorResponse);
     }
 };
-
 // Create Multiple Products
 const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -163,9 +161,6 @@ const createMultipleProducts = async (req: Request, res: Response): Promise<void
         res.status(500).json(internalServerErrorResponse);
     }
 };
-
-
-
 const getProducts = async (req: Request, res: Response): Promise<void> => {
     try {
         let { page = "1", limit = "10", sort = "createdAt", order = "desc", category } = req.query;
@@ -224,5 +219,49 @@ const getProducts = async (req: Request, res: Response): Promise<void> => {
         res.status(500).json(internalServerErrorResponse);
     }
 };
+// Initialize cache with 10 minutes expiration
+const productCache = new NodeCache({ stdTTL: 900, checkperiod: 920 });
 
-export { createProduct, createMultipleProducts, getProducts };
+const searchProducts = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const query = (req.query.query as string)?.trim().toLowerCase();
+
+        if (!query) {
+            res.status(400).json({ message: "Query parameter is required" });
+            return;
+        }
+
+        // Check cache first
+        const cachedProducts = productCache.get("allProducts") as any[];
+        if (cachedProducts) {
+            console.log("Serving from cache");
+            const filteredProducts = cachedProducts.filter(product =>
+                product.name.toLowerCase().includes(query)
+            ).slice(0, 20);
+            
+            res.status(200).json({ statusCode: 200, data: filteredProducts });
+            return;
+        }
+
+        console.log("Fetching from database...");
+        
+        // Fetch from DB and cache it
+        const products = await Product.find();
+        productCache.set("allProducts", products);
+
+        // Filter results
+        const filteredProducts = products.filter(product =>
+            product.name.toLowerCase().includes(query)
+        ).slice(0, 20);
+
+        res.status(200).json({ statusCode: 200, data: filteredProducts });
+    } catch (err: any) {
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+};
+
+export { createProduct, createMultipleProducts, getProducts, searchProducts};
