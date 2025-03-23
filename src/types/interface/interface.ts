@@ -17,3 +17,14 @@ export interface IAddress {
     state: string; 
     pincode: string;
 }
+
+export interface IProduct {
+    name: string;
+    description: string;
+    price: number;
+    category: string;
+    stock: number;
+    image: string;
+    origin : string;
+    shelfLife: string;
+}

@@ -7,7 +7,7 @@ import connectDatabase from './config/database';
 import cloudRoutes from "./routes/cloudinary.routes"; 
 import cookieParser from 'cookie-parser';
 import userRoutes from './routes/user.routes';
-
+import productRoutes from "./routes/product.routes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,6 +22,7 @@ app.use(cors(
 app.use(cookieParser());
 app.use('/cloud', cloudRoutes);
 app.use('/user', userRoutes);
+app.use('/product', productRoutes);
 
 (async()=>{
     try {
