@@ -72,12 +72,16 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
         const token = jwt.sign({ email }, process.env.JWT_SECRET as string, { expiresIn: "100d" });
 
         
-        res.cookie("token", token, { httpOnly: true });
+       
         const user = await User.findOne({ email });
         const successResponse:SuccessResponse = {
             message : "OTP verified successfully",
             statusCode : 200,
-            data : user
+            data : {
+                user,
+                token
+            },
+             
         }
         res.status(200).json(  successResponse);
     } catch (err: any) {

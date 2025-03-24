@@ -69,12 +69,14 @@ const verifyOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         yield otp_model_1.default.deleteOne({ email, otp }); // Remove OTP after successful verification
         const token = jsonwebtoken_1.default.sign({ email }, process.env.JWT_SECRET, { expiresIn: "100d" });
-        res.cookie("token", token, { httpOnly: true });
         const user = yield user_model_1.default.findOne({ email });
         const successResponse = {
             message: "OTP verified successfully",
             statusCode: 200,
-            data: user
+            data: {
+                user,
+                token
+            },
         };
         res.status(200).json(successResponse);
     }
