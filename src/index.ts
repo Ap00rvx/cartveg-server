@@ -9,7 +9,7 @@ import cookieParser from 'cookie-parser';
 import userRoutes from './routes/user.routes';
 import productRoutes from "./routes/product.routes";
 import adminRoutes from './routes/admin.routes';
-
+import commonRoutes from './routes/common.routes';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +26,7 @@ app.use('/cloud', cloudRoutes);
 app.use('/user', userRoutes);
 app.use('/product', productRoutes);
 app.use('/admin', adminRoutes);
+app.use('/common', commonRoutes);
 
 (async()=>{
     try {

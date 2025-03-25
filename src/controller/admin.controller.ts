@@ -6,6 +6,7 @@ import {generateAdminToken} from "../config/helpers" ;
 import { sendAdminLoginAlert } from "../config/nodemailer";
 import { InterServerError, SuccessResponse } from "../types/types/types";
 import { SortOrder } from "mongoose";
+import cache from "../config/cache";
 // Create Multiple Products
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -104,7 +105,7 @@ export const getAllProducts = async(req: Request, res: Response): Promise<void> 
                
                };
                if (category) {
-                   filter.category = category;
+                filter.category = { $regex: new RegExp(category as string, "i") };
                }
        
                // Fetch products with pagination
@@ -332,4 +333,50 @@ export const adminLogin = async (req: Request, res: Response): Promise<void> => 
             stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
         });
     }
+}
+
+export const searchProducts = async (req: Request, res: Response): Promise<void> => {
+    try{
+        const query = (req.query.query as string)?.trim().toLowerCase();
+
+        if (!query) {
+            res.status(400).json({ message: "Query parameter is required" });
+            return;
+        }
+
+        // Check cache first
+        const cachedProducts = cache.get("allProducts") as any[];
+        if (cachedProducts) {
+            console.log("Serving from cache");
+            const filteredProducts = cachedProducts.filter(product =>
+                product.name.toLowerCase().includes(query)
+            ).slice(0, 20);
+            
+            res.status(200).json({ statusCode: 200, data: filteredProducts });
+            return;
+        }
+
+        console.log("Fetching from database...");
+        
+        // Fetch from DB and cache it
+        const products = await Product.find({
+            
+        });
+        cache.set("allProducts", products);
+
+        // Filter results
+        const filteredProducts = products.filter(product =>
+            product.name.toLowerCase().includes(query)
+        ).slice(0, 20);
+
+        res.status(200).json({ statusCode: 200, data: filteredProducts });
+    }
+    catch(err:any){
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+
 }

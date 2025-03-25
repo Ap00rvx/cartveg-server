@@ -100,7 +100,8 @@ const getProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             isAvailable: true, // Ensure only available products are fetched
         };
         if (category) {
-            filter.category = category;
+            // make in case-insensitive
+            filter.category = { $regex: new RegExp(category, "i") };
         }
         // Fetch products with pagination
         const products = yield product_model_1.default.find(filter)

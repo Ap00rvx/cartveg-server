@@ -12,12 +12,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminLogin = exports.createAdminUser = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
+exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const helpers_1 = require("../config/helpers");
 const nodemailer_1 = require("../config/nodemailer");
+const cache_1 = __importDefault(require("../config/cache"));
 // Create Multiple Products
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -102,7 +103,7 @@ const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
         // Filtering by category if provided
         const filter = {};
         if (category) {
-            filter.category = category;
+            filter.category = { $regex: new RegExp(category, "i") };
         }
         // Fetch products with pagination
         const products = yield product_model_1.default.find(filter)
@@ -310,3 +311,36 @@ const adminLogin = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 });
 exports.adminLogin = adminLogin;
+const searchProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const query = (_a = req.query.query) === null || _a === void 0 ? void 0 : _a.trim().toLowerCase();
+        if (!query) {
+            res.status(400).json({ message: "Query parameter is required" });
+            return;
+        }
+        // Check cache first
+        const cachedProducts = cache_1.default.get("allProducts");
+        if (cachedProducts) {
+            console.log("Serving from cache");
+            const filteredProducts = cachedProducts.filter(product => product.name.toLowerCase().includes(query)).slice(0, 20);
+            res.status(200).json({ statusCode: 200, data: filteredProducts });
+            return;
+        }
+        console.log("Fetching from database...");
+        // Fetch from DB and cache it
+        const products = yield product_model_1.default.find({});
+        cache_1.default.set("allProducts", products);
+        // Filter results
+        const filteredProducts = products.filter(product => product.name.toLowerCase().includes(query)).slice(0, 20);
+        res.status(200).json({ statusCode: 200, data: filteredProducts });
+    }
+    catch (err) {
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.searchProducts = searchProducts;

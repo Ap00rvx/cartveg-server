@@ -101,7 +101,8 @@ const getProducts = async (req: Request, res: Response): Promise<void> => {
             isAvailable: true, // Ensure only available products are fetched
         };
         if (category) {
-            filter.category = category;
+            // make in case-insensitive
+            filter.category = { $regex: new RegExp(category as string, "i") };
         }
 
         // Fetch products with pagination
