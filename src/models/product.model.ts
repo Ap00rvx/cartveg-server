@@ -47,6 +47,12 @@ const productSchema = new Schema<IProduct>(
       required: [true, "Shelf life is required"],
       trim: true,
     },
+    isAvailable: {
+      type: Boolean,
+      default: true,
+      required: true,
+      
+    },
 
     // Image Handling
     image: {

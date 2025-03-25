@@ -21,6 +21,7 @@ const cloudinary_routes_1 = __importDefault(require("./routes/cloudinary.routes"
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const user_routes_1 = __importDefault(require("./routes/user.routes"));
 const product_routes_1 = __importDefault(require("./routes/product.routes"));
+const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
 app.use((0, morgan_1.default)('dev'));
@@ -33,6 +34,7 @@ app.use((0, cookie_parser_1.default)());
 app.use('/cloud', cloudinary_routes_1.default);
 app.use('/user', user_routes_1.default);
 app.use('/product', product_routes_1.default);
+app.use('/admin', admin_routes_1.default);
 (() => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield (0, database_1.default)();

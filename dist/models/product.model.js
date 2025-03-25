@@ -77,6 +77,11 @@ const productSchema = new mongoose_1.Schema({
         required: [true, "Shelf life is required"],
         trim: true,
     },
+    isAvailable: {
+        type: Boolean,
+        default: true,
+        required: true,
+    },
     // Image Handling
     image: {
         type: String,

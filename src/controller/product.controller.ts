@@ -82,85 +82,7 @@ const createProduct = async (req: Request, res: Response): Promise<void> => {
         res.status(500).json(internalServerErrorResponse);
     }
 };
-// Create Multiple Products
-const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const products = req.body;
 
-        // Check if products array exists and is not empty
-        if (!Array.isArray(products) || products.length === 0) {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Request body must contain an array of products.",
-            });
-            return;
-        }
-
-        // Validate each product before insertion
-        for (const product of products) {
-            const { name, description, price, category, stock, origin, shelfLife } = product;
-
-            if (!name || !description || !price || !category || !stock || !origin || !shelfLife) {
-                res.status(400).json({
-                    statusCode: 400,
-                    message: "All product fields are required.",
-                });
-                return;
-            }
-
-            if (price < 0 || stock < 0) {
-                res.status(400).json({
-                    statusCode: 400,
-                    message: "Price and stock must be non-negative values.",
-                });
-                return;
-            }
-        }
-
-        // Insert products into database
-        const result = await Product.insertMany(products);
-
-        // Success Response
-        const successResponse: SuccessResponse = {
-            statusCode: 201,
-            message: "Products added successfully",
-            data: result,
-        };
-
-        res.status(201).json(successResponse);
-    } catch (error: any) {
-        console.error("Error creating multiple products:", error);
-
-        // Handle Mongoose Validation Errors
-        if (error.name === "ValidationError") {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Validation error",
-                errors: error.errors,
-            });
-            return;
-        }
-
-        // Handle Duplicate Key Errors (e.g., unique name constraint)
-        if (error.code === 11000) {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Duplicate entry detected",
-                details: error.keyValue,
-            });
-            return;
-        }
-
-        // General Internal Server Error
-        const internalServerErrorResponse: InterServerError = {
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? error.stack : undefined, // Hide stack in production
-        };
-
-        res.status(500).json(internalServerErrorResponse);
-    }
-};
 const getProducts = async (req: Request, res: Response): Promise<void> => {
     try {
         let { page = "1", limit = "10", sort = "createdAt", order = "desc", category } = req.query;
@@ -170,19 +92,21 @@ const getProducts = async (req: Request, res: Response): Promise<void> => {
         const limitNumber = Math.max(1, parseInt(limit as string, 10));
         const skip = (pageNumber - 1) * limitNumber;
 
-        // Sorting configuration (Fixed Typing Issue)
+        // Sorting configuration
         const sortOrder: SortOrder = order === "asc" ? 1 : -1;
         const sortQuery: { [key: string]: SortOrder } = { [sort as string]: sortOrder };
 
         // Filtering by category if provided
-        const filter: any = {};
+        const filter: any = {
+            isAvailable: true, // Ensure only available products are fetched
+        };
         if (category) {
             filter.category = category;
         }
 
         // Fetch products with pagination
         const products = await Product.find(filter)
-            .sort(sortQuery) // ✅ Fixed Type Issue Here
+            .sort(sortQuery)
             .skip(skip)
             .limit(limitNumber);
 
@@ -191,11 +115,11 @@ const getProducts = async (req: Request, res: Response): Promise<void> => {
         const totalPages = Math.ceil(totalProducts / limitNumber);
 
         // Success Response
-        const successResponse: SuccessResponse = {
+        res.status(200).json({
             statusCode: 200,
             message: "Products retrieved successfully",
             data: {
-                products,
+                products, // No need to filter manually since it's already done in the query
                 pagination: {
                     currentPage: pageNumber,
                     totalPages,
@@ -203,22 +127,19 @@ const getProducts = async (req: Request, res: Response): Promise<void> => {
                     limit: limitNumber,
                 },
             },
-        };
-
-        res.status(200).json(successResponse);
+        });
     } catch (error: any) {
         console.error("Error fetching products:", error);
 
         // Internal Server Error Response
-        const internalServerErrorResponse: InterServerError = {
+        res.status(500).json({
             statusCode: 500,
             message: "Internal server error",
             stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
-        };
-
-        res.status(500).json(internalServerErrorResponse);
+        });
     }
 };
+
 // Initialize cache with 10 minutes expiration
 const productCache = new NodeCache({ stdTTL: 900, checkperiod: 920 });
 
@@ -246,7 +167,9 @@ const searchProducts = async (req: Request, res: Response): Promise<void> => {
         console.log("Fetching from database...");
         
         // Fetch from DB and cache it
-        const products = await Product.find();
+        const products = await Product.find({
+            isAvailable: true,
+        });
         productCache.set("allProducts", products);
 
         // Filter results
@@ -263,5 +186,5 @@ const searchProducts = async (req: Request, res: Response): Promise<void> => {
         });
     }
 };
-
-export { createProduct, createMultipleProducts, getProducts, searchProducts};
+export { createProduct, getProducts, searchProducts
+};

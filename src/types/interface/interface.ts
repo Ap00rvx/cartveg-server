@@ -7,8 +7,12 @@ export interface IUser {
     phone : string;
      // optional fields 
     dob?: Date; 
-
+    // Define or import UserRole
+     role?: 'admin' | 'user' ; // Example definition, adjust as needed
+    isActivate?: boolean;
+    password?: string;
 }
+
 
 export interface IAddress {
     flatno: string;
@@ -27,4 +31,5 @@ export interface IProduct {
     image: string;
     origin : string;
     shelfLife: string;
+    isAvailable: boolean;
 }

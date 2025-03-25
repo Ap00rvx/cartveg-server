@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.searchProducts = exports.getProducts = exports.createMultipleProducts = exports.createProduct = void 0;
+exports.searchProducts = exports.getProducts = exports.createProduct = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const node_cache_1 = __importDefault(require("node-cache"));
 const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -85,76 +85,6 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
     }
 });
 exports.createProduct = createProduct;
-// Create Multiple Products
-const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const products = req.body;
-        // Check if products array exists and is not empty
-        if (!Array.isArray(products) || products.length === 0) {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Request body must contain an array of products.",
-            });
-            return;
-        }
-        // Validate each product before insertion
-        for (const product of products) {
-            const { name, description, price, category, stock, origin, shelfLife } = product;
-            if (!name || !description || !price || !category || !stock || !origin || !shelfLife) {
-                res.status(400).json({
-                    statusCode: 400,
-                    message: "All product fields are required.",
-                });
-                return;
-            }
-            if (price < 0 || stock < 0) {
-                res.status(400).json({
-                    statusCode: 400,
-                    message: "Price and stock must be non-negative values.",
-                });
-                return;
-            }
-        }
-        // Insert products into database
-        const result = yield product_model_1.default.insertMany(products);
-        // Success Response
-        const successResponse = {
-            statusCode: 201,
-            message: "Products added successfully",
-            data: result,
-        };
-        res.status(201).json(successResponse);
-    }
-    catch (error) {
-        console.error("Error creating multiple products:", error);
-        // Handle Mongoose Validation Errors
-        if (error.name === "ValidationError") {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Validation error",
-                errors: error.errors,
-            });
-            return;
-        }
-        // Handle Duplicate Key Errors (e.g., unique name constraint)
-        if (error.code === 11000) {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Duplicate entry detected",
-                details: error.keyValue,
-            });
-            return;
-        }
-        // General Internal Server Error
-        const internalServerErrorResponse = {
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? error.stack : undefined, // Hide stack in production
-        };
-        res.status(500).json(internalServerErrorResponse);
-    }
-});
-exports.createMultipleProducts = createMultipleProducts;
 const getProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         let { page = "1", limit = "10", sort = "createdAt", order = "desc", category } = req.query;
@@ -162,28 +92,30 @@ const getProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         const pageNumber = Math.max(1, parseInt(page, 10));
         const limitNumber = Math.max(1, parseInt(limit, 10));
         const skip = (pageNumber - 1) * limitNumber;
-        // Sorting configuration (Fixed Typing Issue)
+        // Sorting configuration
         const sortOrder = order === "asc" ? 1 : -1;
         const sortQuery = { [sort]: sortOrder };
         // Filtering by category if provided
-        const filter = {};
+        const filter = {
+            isAvailable: true, // Ensure only available products are fetched
+        };
         if (category) {
             filter.category = category;
         }
         // Fetch products with pagination
         const products = yield product_model_1.default.find(filter)
-            .sort(sortQuery) // ✅ Fixed Type Issue Here
+            .sort(sortQuery)
             .skip(skip)
             .limit(limitNumber);
         // Count total products for pagination metadata
         const totalProducts = yield product_model_1.default.countDocuments(filter);
         const totalPages = Math.ceil(totalProducts / limitNumber);
         // Success Response
-        const successResponse = {
+        res.status(200).json({
             statusCode: 200,
             message: "Products retrieved successfully",
             data: {
-                products,
+                products, // No need to filter manually since it's already done in the query
                 pagination: {
                     currentPage: pageNumber,
                     totalPages,
@@ -191,18 +123,16 @@ const getProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                     limit: limitNumber,
                 },
             },
-        };
-        res.status(200).json(successResponse);
+        });
     }
     catch (error) {
         console.error("Error fetching products:", error);
         // Internal Server Error Response
-        const internalServerErrorResponse = {
+        res.status(500).json({
             statusCode: 500,
             message: "Internal server error",
             stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
-        };
-        res.status(500).json(internalServerErrorResponse);
+        });
     }
 });
 exports.getProducts = getProducts;
@@ -226,7 +156,9 @@ const searchProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
         }
         console.log("Fetching from database...");
         // Fetch from DB and cache it
-        const products = yield product_model_1.default.find();
+        const products = yield product_model_1.default.find({
+            isAvailable: true,
+        });
         productCache.set("allProducts", products);
         // Filter results
         const filteredProducts = products.filter(product => product.name.toLowerCase().includes(query)).slice(0, 20);
