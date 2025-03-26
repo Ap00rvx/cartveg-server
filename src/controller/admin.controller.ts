@@ -6,6 +6,7 @@ import {generateAdminToken} from "../config/helpers" ;
 import { sendAdminLoginAlert } from "../config/nodemailer";
 import { InterServerError, SuccessResponse } from "../types/types/types";
 import { SortOrder } from "mongoose";
+import { IAddress, IUser } from "../types/interface/interface";
 import cache from "../config/cache";
 // Create Multiple Products
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
@@ -86,67 +87,69 @@ export const createMultipleProducts = async (req: Request, res: Response): Promi
         res.status(500).json(internalServerErrorResponse);
     }
 };
-export const getAllProducts = async(req: Request, res: Response): Promise<void> => {
+export const getAllProducts = async (req: Request, res: Response): Promise<void> => {
     try {
-        //fetch products with pagination too
-        let { page = "1", limit = "10", sort = "createdAt", order = "desc", category } = req.query;
-       
-               // Convert query params to numbers where needed
-               const pageNumber = Math.max(1, parseInt(page as string, 10));
-               const limitNumber = Math.max(1, parseInt(limit as string, 10));
-               const skip = (pageNumber - 1) * limitNumber;
-       
-               // Sorting configuration
-               const sortOrder: SortOrder = order === "asc" ? 1 : -1;
-               const sortQuery: { [key: string]: SortOrder } = { [sort as string]: sortOrder };
-       
-               // Filtering by category if provided
-               const filter: any = {
-               
-               };
-               if (category) {
-                filter.category = { $regex: new RegExp(category as string, "i") };
-               }
-       
-               // Fetch products with pagination
-               const products = await Product.find(filter)
-                   .sort(sortQuery)
-                   .skip(skip)
-                   .limit(limitNumber);
-       
-               // Count total products for pagination metadata
-               const totalProducts = await Product.countDocuments(filter);
-               const totalPages = Math.ceil(totalProducts / limitNumber);
-       
-               // Success Response
-               res.status(200).json({
-                   statusCode: 200,
-                   message: "Products retrieved successfully",
-                   data: {
-                       products, // No need to filter manually since it's already done in the query
-                       pagination: {
-                           currentPage: pageNumber,
-                           totalPages,
-                           totalProducts,
-                           limit: limitNumber,
-                       },
-                   },
-               });
+        // Extract query parameters with defaults
+        let { page = "1", limit = "10", sort = "createdAt", order = "desc", category, query, isAvailable } = req.query;
 
+        // Convert query params to numbers where needed
+        const pageNumber = Math.max(1, parseInt(page as string, 10));
+        const limitNumber = Math.max(1, parseInt(limit as string, 10));
+        const skip = (pageNumber - 1) * limitNumber;
 
+        // Sorting configuration
+        const sortOrder: SortOrder = order === "asc" ? 1 : -1;
+        const sortQuery: { [key: string]: SortOrder } = { [sort as string]: sortOrder };
 
+        // Construct filtering criteria
+        const filter: any = {};
 
-    }
-    catch(err: any){
+        if (isAvailable !== undefined) {
+            filter.isAvailable = isAvailable === "1";
+        }
+
+        if (query) {
+            filter.name = { $regex: new RegExp(query as string, "i") }; // Case-insensitive search in name
+        }
+
+        if (category) {
+            filter.category = { $regex: new RegExp(category as string, "i") }; // Case-insensitive category search
+        }
+
+        // Fetch products with filtering, sorting, and pagination
+        const products = await Product.find(filter)
+            .sort(sortQuery)
+            .skip(skip)
+            .limit(limitNumber);
+
+        // Count total products for pagination metadata
+        const totalProducts = await Product.countDocuments(filter);
+        const totalPages = Math.ceil(totalProducts / limitNumber);
+
+        // Send response
+        res.status(200).json({
+            statusCode: 200,
+            message: "Products retrieved successfully",
+            data: {
+                products,
+                pagination: {
+                    currentPage: pageNumber,
+                    totalPages,
+                    totalProducts,
+                    limit: limitNumber,
+                },
+            },
+        });
+
+    } catch (err: any) {
         console.error("Error fetching products:", err);
-        const response: InterServerError = {
-            message: err.message,
+        res.status(500).json({
             statusCode: 500,
-            stack: err.stack,
-        };
-        res.status(500).json(response);
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
     }
-}
+};
 export const updateProductStock = async (req: Request, res: Response): Promise<void> => {
     try {
         const { productId, updatedStockValue } = req.body;
@@ -271,8 +274,16 @@ export  const updateProductThreshold = async (req: Request, res: Response): Prom
 
         // Update threshold
         product.threshold = threshold;
+        if(product.stock < threshold){
+            product.isAvailable = false;
+        }
+        else{
+            product.isAvailable = true;
+        }
+
         await product.save();
 
+        
         //update new cache 
         const products = await Product.find({});
         cache.set("allProducts", products);
@@ -289,7 +300,6 @@ export  const updateProductThreshold = async (req: Request, res: Response): Prom
     }
 
 }
-
 export const createAdminUser  = async (req: Request, res: Response): Promise<void> => {
     try{
         const { email, password, name } = req.body;
@@ -474,3 +484,84 @@ export const getAllUsers = async(req: Request, res: Response): Promise<void> => 
         });
     }
 }
+export const updateUserDetails = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id, data }: { id: string; data: Partial<IUser> } = req.body;
+
+        if (!id) {
+            res.status(400).json({ statusCode: 400, message: "User ID is required" });
+            return;
+        }
+
+        const { addresses, name, phone, dob, isActivate } = data;
+
+        const updatedUser = await User.findByIdAndUpdate(
+            id,
+            {
+                ...(name && { name }),
+                ...(phone && { phone }),
+                ...(dob && { dob }),
+                ...(typeof isActivate === "boolean" && { isActivate }),
+                ...(addresses && { addresses: addresses as IAddress[] }),
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedUser) {
+            res.status(404).json({ statusCode: 404, message: "User not found" });
+            return;
+        }
+
+        res.status(200).json({
+            statusCode: 200,
+            message: "User updated successfully",
+            user: updatedUser,
+        });
+    } catch (err: any) {
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: err.stack
+        });
+    }
+};
+export const deleteUser = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.body;
+
+        if (!id) {
+            res.status(400).json({
+                statusCode: 400,
+                message: "User ID is required",
+            });
+            return;
+        }
+
+        // Find the user
+        const user = await User.findById(id);
+
+        if (!user) {
+            res.status(404).json({
+                statusCode: 404,
+                message: "User not found",
+            });
+            return;
+        }
+
+        // Delete the user
+        await User.findByIdAndDelete(id);
+
+        res.status(200).json({
+            statusCode: 200,
+            message: "User deleted successfully",
+        });
+
+    } catch (err: any) {
+        console.error("Error deleting user:", err);
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+};

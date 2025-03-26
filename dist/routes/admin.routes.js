@@ -8,10 +8,12 @@ router.put("/updateProductStock", admin_middleware_1.adminMiddleware, admin_cont
 router.put("/updateProductDetails", admin_middleware_1.adminMiddleware, admin_controller_1.updateProductDetails);
 router.put("/updateProductThreshold", admin_middleware_1.adminMiddleware, admin_controller_1.updateProductThreshold);
 router.put("/updateProductAvailability", admin_middleware_1.adminMiddleware, admin_controller_1.updateProductAvailability);
+router.put("/user/update", admin_middleware_1.adminMiddleware, admin_controller_1.updateUserDetails);
 router.post("/createAdminUser", admin_middleware_1.adminMiddleware, admin_controller_1.createAdminUser);
 router.post("/createProducts", admin_middleware_1.adminMiddleware, admin_controller_1.createMultipleProducts);
 router.post("/login", admin_controller_1.adminLogin);
 router.get("/products", admin_middleware_1.adminMiddleware, admin_controller_1.getAllProducts);
 router.get("/search", admin_middleware_1.adminMiddleware, admin_controller_1.searchProducts);
 router.get("/users", admin_middleware_1.adminMiddleware, admin_controller_1.getAllUsers);
+router.delete("/user/delete", admin_middleware_1.adminMiddleware, admin_controller_1.deleteUser);
 exports.default = router;

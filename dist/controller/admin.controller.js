@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
+exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -90,8 +90,8 @@ const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, f
 exports.createMultipleProducts = createMultipleProducts;
 const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        //fetch products with pagination too
-        let { page = "1", limit = "10", sort = "createdAt", order = "desc", category } = req.query;
+        // Extract query parameters with defaults
+        let { page = "1", limit = "10", sort = "createdAt", order = "desc", category, query, isAvailable } = req.query;
         // Convert query params to numbers where needed
         const pageNumber = Math.max(1, parseInt(page, 10));
         const limitNumber = Math.max(1, parseInt(limit, 10));
@@ -99,12 +99,18 @@ const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
         // Sorting configuration
         const sortOrder = order === "asc" ? 1 : -1;
         const sortQuery = { [sort]: sortOrder };
-        // Filtering by category if provided
+        // Construct filtering criteria
         const filter = {};
-        if (category) {
-            filter.category = { $regex: new RegExp(category, "i") };
+        if (isAvailable !== undefined) {
+            filter.isAvailable = isAvailable === "1";
         }
-        // Fetch products with pagination
+        if (query) {
+            filter.name = { $regex: new RegExp(query, "i") }; // Case-insensitive search in name
+        }
+        if (category) {
+            filter.category = { $regex: new RegExp(category, "i") }; // Case-insensitive category search
+        }
+        // Fetch products with filtering, sorting, and pagination
         const products = yield product_model_1.default.find(filter)
             .sort(sortQuery)
             .skip(skip)
@@ -112,12 +118,12 @@ const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
         // Count total products for pagination metadata
         const totalProducts = yield product_model_1.default.countDocuments(filter);
         const totalPages = Math.ceil(totalProducts / limitNumber);
-        // Success Response
+        // Send response
         res.status(200).json({
             statusCode: 200,
             message: "Products retrieved successfully",
             data: {
-                products, // No need to filter manually since it's already done in the query
+                products,
                 pagination: {
                     currentPage: pageNumber,
                     totalPages,
@@ -129,12 +135,11 @@ const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
     catch (err) {
         console.error("Error fetching products:", err);
-        const response = {
-            message: err.message,
+        res.status(500).json({
             statusCode: 500,
-            stack: err.stack,
-        };
-        res.status(500).json(response);
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
     }
 });
 exports.getAllProducts = getAllProducts;
@@ -251,6 +256,12 @@ const updateProductThreshold = (req, res) => __awaiter(void 0, void 0, void 0, f
         }
         // Update threshold
         product.threshold = threshold;
+        if (product.stock < threshold) {
+            product.isAvailable = false;
+        }
+        else {
+            product.isAvailable = true;
+        }
         yield product.save();
         //update new cache 
         const products = yield product_model_1.default.find({});
@@ -432,3 +443,67 @@ const getAllUsers = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
     }
 });
 exports.getAllUsers = getAllUsers;
+const updateUserDetails = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id, data } = req.body;
+        if (!id) {
+            res.status(400).json({ statusCode: 400, message: "User ID is required" });
+            return;
+        }
+        const { addresses, name, phone, dob, isActivate } = data;
+        const updatedUser = yield user_model_1.default.findByIdAndUpdate(id, Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (name && { name })), (phone && { phone })), (dob && { dob })), (typeof isActivate === "boolean" && { isActivate })), (addresses && { addresses: addresses })), { new: true, runValidators: true });
+        if (!updatedUser) {
+            res.status(404).json({ statusCode: 404, message: "User not found" });
+            return;
+        }
+        res.status(200).json({
+            statusCode: 200,
+            message: "User updated successfully",
+            user: updatedUser,
+        });
+    }
+    catch (err) {
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: err.stack
+        });
+    }
+});
+exports.updateUserDetails = updateUserDetails;
+const deleteUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.body;
+        if (!id) {
+            res.status(400).json({
+                statusCode: 400,
+                message: "User ID is required",
+            });
+            return;
+        }
+        // Find the user
+        const user = yield user_model_1.default.findById(id);
+        if (!user) {
+            res.status(404).json({
+                statusCode: 404,
+                message: "User not found",
+            });
+            return;
+        }
+        // Delete the user
+        yield user_model_1.default.findByIdAndDelete(id);
+        res.status(200).json({
+            statusCode: 200,
+            message: "User deleted successfully",
+        });
+    }
+    catch (err) {
+        console.error("Error deleting user:", err);
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.deleteUser = deleteUser;
