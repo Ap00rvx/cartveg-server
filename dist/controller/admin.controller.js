@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
+exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -152,7 +152,14 @@ const updateProductStock = (req, res) => __awaiter(void 0, void 0, void 0, funct
             return;
         }
         // Update stock
-        product.stock = updatedStockValue;
+        if (updatedStockValue < product.threshold) {
+            product.isAvailable = false;
+            product.stock = updatedStockValue;
+        }
+        else {
+            product.stock = updatedStockValue;
+            product.isAvailable = true;
+        }
         yield product.save();
         res.status(200).json({ message: "Stock updated successfully", data: product });
     }
@@ -180,6 +187,7 @@ const updateProductDetails = (req, res) => __awaiter(void 0, void 0, void 0, fun
         // remove stock and isAvailable from updatedDetails
         delete updatedDetails.stock;
         delete updatedDetails.isAvailable;
+        delete updatedDetails.threshold;
         // Update product details
         for (const key in updatedDetails) {
             if (key in product) {
@@ -223,6 +231,41 @@ const updateProductAvailability = (req, res) => __awaiter(void 0, void 0, void 0
     }
 });
 exports.updateProductAvailability = updateProductAvailability;
+const updateProductThreshold = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { productId, threshold } = req.body;
+        if (!productId || threshold === undefined) {
+            res.status(400).json({ message: "productId and threshold are required" });
+            return;
+        }
+        // return error if threshold is negative or string 
+        if (threshold < 0 || typeof threshold === "string") {
+            res.status(400).json({ message: "Threshold must be a non-negative number" });
+            return;
+        }
+        // Find product by ID
+        const product = yield product_model_1.default.findById(productId);
+        if (!product) {
+            res.status(404).json({ message: "Product not found" });
+            return;
+        }
+        // Update threshold
+        product.threshold = threshold;
+        yield product.save();
+        //update new cache 
+        const products = yield product_model_1.default.find({});
+        cache_1.default.set("allProducts", products);
+        res.status(200).json({ message: "Threshold updated successfully", data: product });
+        return;
+    }
+    catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.updateProductThreshold = updateProductThreshold;
 const createAdminUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email, password, name } = req.body;

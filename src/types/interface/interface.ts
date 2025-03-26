@@ -31,5 +31,6 @@ export interface IProduct {
     image: string;
     origin : string;
     shelfLife: string;
+    threshold: number;
     isAvailable: boolean;
 }

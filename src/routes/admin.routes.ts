@@ -1,10 +1,11 @@
-import { updateProductAvailability,updateProductDetails,updateProductStock,createAdminUser,adminLogin,createMultipleProducts,getAllProducts,searchProducts,getAllUsers} from "../controller/admin.controller";
+import { updateProductAvailability,updateProductThreshold,updateProductDetails,updateProductStock,createAdminUser,adminLogin,createMultipleProducts,getAllProducts,searchProducts,getAllUsers} from "../controller/admin.controller";
 import { Router } from "express";
 import { adminMiddleware } from "../middleware/admin.middleware";
 const router = Router();
 
 router.put("/updateProductStock", adminMiddleware,updateProductStock);
 router.put("/updateProductDetails",adminMiddleware, updateProductDetails);
+router.put("/updateProductThreshold", adminMiddleware,updateProductThreshold);
 router.put("/updateProductAvailability", adminMiddleware,updateProductAvailability);
 
 

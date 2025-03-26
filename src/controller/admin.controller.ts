@@ -164,7 +164,14 @@ export const updateProductStock = async (req: Request, res: Response): Promise<v
         }
 
         // Update stock
-        product.stock = updatedStockValue;
+        if(updatedStockValue < product.threshold){
+            product.isAvailable = false;
+            product.stock = updatedStockValue;
+        }
+        else{
+            product.stock = updatedStockValue;
+            product.isAvailable = true;
+        }
         await product.save();
 
         res.status(200).json({ message: "Stock updated successfully", data: product });
@@ -193,6 +200,7 @@ export const updateProductDetails = async (req: Request, res: Response): Promise
         // remove stock and isAvailable from updatedDetails
         delete updatedDetails.stock;
         delete updatedDetails.isAvailable;
+        delete updatedDetails.threshold;
 
         // Update product details
         for (const key in updatedDetails) {
@@ -240,6 +248,48 @@ export const updateProductAvailability = async (req: Request, res: Response): Pr
         });
     }
 }
+export  const updateProductThreshold = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { productId, threshold } = req.body;
+
+        if (!productId || threshold === undefined) {
+            res.status(400).json({ message: "productId and threshold are required" });
+            return;
+        }
+        // return error if threshold is negative or string 
+        if(threshold < 0 || typeof threshold === "string"){
+            res.status(400).json({ message: "Threshold must be a non-negative number" });
+            return;
+        }
+
+        // Find product by ID
+        const product = await Product.findById(productId);
+        if (!product) {
+            res.status(404).json({ message: "Product not found" });
+            return;
+        }
+
+        // Update threshold
+        product.threshold = threshold;
+        await product.save();
+
+        //update new cache 
+        const products = await Product.find({});
+        cache.set("allProducts", products);
+
+        
+
+        res.status(200).json({ message: "Threshold updated successfully", data: product });
+        return 
+    }catch(err:any ){
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+
+}
+
 export const createAdminUser  = async (req: Request, res: Response): Promise<void> => {
     try{
         const { email, password, name } = req.body;

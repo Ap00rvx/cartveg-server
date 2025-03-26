@@ -6,6 +6,7 @@ const admin_middleware_1 = require("../middleware/admin.middleware");
 const router = (0, express_1.Router)();
 router.put("/updateProductStock", admin_middleware_1.adminMiddleware, admin_controller_1.updateProductStock);
 router.put("/updateProductDetails", admin_middleware_1.adminMiddleware, admin_controller_1.updateProductDetails);
+router.put("/updateProductThreshold", admin_middleware_1.adminMiddleware, admin_controller_1.updateProductThreshold);
 router.put("/updateProductAvailability", admin_middleware_1.adminMiddleware, admin_controller_1.updateProductAvailability);
 router.post("/createAdminUser", admin_middleware_1.adminMiddleware, admin_controller_1.createAdminUser);
 router.post("/createProducts", admin_middleware_1.adminMiddleware, admin_controller_1.createMultipleProducts);

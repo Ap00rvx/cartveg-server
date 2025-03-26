@@ -82,6 +82,12 @@ const productSchema = new mongoose_1.Schema({
         default: true,
         required: true,
     },
+    threshold: {
+        type: Number,
+        default: 10,
+        required: [true, "Threshold quantity is required"],
+        min: [0, "Threshold quantity cannot be negative"],
+    },
     // Image Handling
     image: {
         type: String,
