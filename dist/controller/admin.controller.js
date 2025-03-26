@@ -12,12 +12,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
+exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const helpers_1 = require("../config/helpers");
-const nodemailer_1 = require("../config/nodemailer");
 const cache_1 = __importDefault(require("../config/cache"));
 // Create Multiple Products
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -296,7 +295,7 @@ const adminLogin = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             hour12: true,
         }).format(new Date());
         const device = req.headers["user-agent"] || "Unknown device";
-        yield (0, nodemailer_1.sendAdminLoginAlert)(user.email, device, formatted_time);
+        // await sendAdminLoginAlert(user.email,device,formatted_time  );
         res.status(200).json({ message: "Admin login successful", data: {
                 name: user.name,
                 email: user.email,
@@ -344,3 +343,49 @@ const searchProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.searchProducts = searchProducts;
+const getAllUsers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const query = req.query.role;
+        if (query) {
+            if (query !== "admin" && query !== "user") {
+                res.status(400).json({ message: "Invalid role query" });
+                return;
+            }
+            else {
+                if (query === "admin") {
+                    const users = yield user_model_1.default.find({ role: "admin" }).select("-password");
+                    res.status(200).json({
+                        statusCode: 200,
+                        message: "Admin users retrieved successfully",
+                        data: users,
+                    });
+                    return;
+                }
+                else {
+                    const users = yield user_model_1.default.find({ role: { $ne: "admin" } }).select("-password");
+                    res.status(200).json({
+                        statusCode: 200,
+                        message: "Users retrieved successfully",
+                        data: users,
+                    });
+                    return;
+                }
+            }
+        }
+        const users = yield user_model_1.default.find({}).select("-password");
+        res.status(200).json({
+            statusCode: 200,
+            message: "Users retrieved successfully",
+            data: users,
+        });
+    }
+    catch (error) {
+        console.error("Error fetching users:", error);
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        });
+    }
+});
+exports.getAllUsers = getAllUsers;

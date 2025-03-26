@@ -12,4 +12,5 @@ router.post("/createProducts", admin_middleware_1.adminMiddleware, admin_control
 router.post("/login", admin_controller_1.adminLogin);
 router.get("/products", admin_middleware_1.adminMiddleware, admin_controller_1.getAllProducts);
 router.get("/search", admin_middleware_1.adminMiddleware, admin_controller_1.searchProducts);
+router.get("/users", admin_middleware_1.adminMiddleware, admin_controller_1.getAllUsers);
 exports.default = router;

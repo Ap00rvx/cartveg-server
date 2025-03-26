@@ -321,7 +321,7 @@ export const adminLogin = async (req: Request, res: Response): Promise<void> => 
             hour12: true,
         }).format(new Date()); 
         const device = req.headers["user-agent"] || "Unknown device";
-        await sendAdminLoginAlert(user.email,device,formatted_time  );
+        // await sendAdminLoginAlert(user.email,device,formatted_time  );
         res.status(200).json({ message: "Admin login successful", data: {
             name: user.name,
             email: user.email,
@@ -334,7 +334,6 @@ export const adminLogin = async (req: Request, res: Response): Promise<void> => 
         });
     }
 }
-
 export const searchProducts = async (req: Request, res: Response): Promise<void> => {
     try{
         const query = (req.query.query as string)?.trim().toLowerCase();
@@ -379,4 +378,49 @@ export const searchProducts = async (req: Request, res: Response): Promise<void>
         });
     }
 
+}
+export const getAllUsers = async(req: Request, res: Response): Promise<void> => {
+    try {
+        const query = req.query.role as string;
+        if (query) {
+            if(query !== "admin" && query !== "user"){
+                res.status(400).json({ message: "Invalid role query" });
+                return;
+            }
+            else {
+                if(query  === "admin"){
+                    const users = await User.find({ role: "admin" }).select("-password");
+                    res.status(200).json({
+                        statusCode: 200,
+                        message: "Admin users retrieved successfully",
+                        data: users,
+                    });
+                    return;
+                }
+                else{
+                    
+                    const users = await User.find({ role: { $ne: "admin" } }).select("-password");
+                    res.status(200).json({
+                        statusCode: 200,
+                        message: "Users retrieved successfully",
+                        data: users,
+                    });
+                    return;
+                }
+            }
+        }
+        const users = await User.find({}).select("-password");
+        res.status(200).json({
+            statusCode: 200,
+            message: "Users retrieved successfully",
+            data: users,
+        });
+    } catch (error: any) {
+        console.error("Error fetching users:", error);
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        });
+    }
 }
