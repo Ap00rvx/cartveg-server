@@ -11,6 +11,7 @@ export interface IUser {
      role?: 'admin' | 'user' ; // Example definition, adjust as needed
     isActivate?: boolean;
     password?: string;
+    orders?: string[];
 }
 
 
@@ -29,6 +30,8 @@ export interface IProduct {
     category: string;
     stock: number;
     image: string;
+    unit:string;
+    actualPrice: number;
     origin : string;
     shelfLife: string;
     threshold: number;

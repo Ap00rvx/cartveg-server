@@ -19,10 +19,12 @@ const userSchema = new mongoose.Schema<IUser>({
     phone: { type: String, default: "" },
     dob: { type: Date },
     role: { type: String,enum:["user","admin"], default: "user" },
-    isActivate: { type: Boolean, default: true },
+    isActivate: { type: Boolean, default: false },
     password: { type: String, default: "",required: function(){
         return this.role === "admin";
     } },
+    orders: [{ type: mongoose.Schema.Types.ObjectId, ref: "Order" }, { default: [] }],
+
     
 },{
     timestamps: true,

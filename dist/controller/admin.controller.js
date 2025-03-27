@@ -12,12 +12,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
+exports.createUser = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const helpers_1 = require("../config/helpers");
 const cache_1 = __importDefault(require("../config/cache"));
+const papaparse_1 = __importDefault(require("papaparse"));
 // Create Multiple Products
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -400,36 +401,26 @@ exports.searchProducts = searchProducts;
 const getAllUsers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const query = req.query.role;
+        const page = parseInt(req.query.page) || 1; // Default to page 1
+        const limit = parseInt(req.query.limit) || 10; // Default to 10 users per page
+        const skip = (page - 1) * limit; // Calculate how many documents to skip
+        let filter = {};
         if (query) {
             if (query !== "admin" && query !== "user") {
                 res.status(400).json({ message: "Invalid role query" });
                 return;
             }
-            else {
-                if (query === "admin") {
-                    const users = yield user_model_1.default.find({ role: "admin" }).select("-password");
-                    res.status(200).json({
-                        statusCode: 200,
-                        message: "Admin users retrieved successfully",
-                        data: users,
-                    });
-                    return;
-                }
-                else {
-                    const users = yield user_model_1.default.find({ role: { $ne: "admin" } }).select("-password");
-                    res.status(200).json({
-                        statusCode: 200,
-                        message: "Users retrieved successfully",
-                        data: users,
-                    });
-                    return;
-                }
-            }
+            filter = query === "admin" ? { role: "admin" } : { role: { $ne: "admin" } };
         }
-        const users = yield user_model_1.default.find({}).select("-password");
+        // Get total user count
+        const totalUsers = yield user_model_1.default.countDocuments(filter);
+        const users = yield user_model_1.default.find(filter).select("-password").skip(skip).limit(limit);
         res.status(200).json({
             statusCode: 200,
             message: "Users retrieved successfully",
+            currentPage: page,
+            totalPages: Math.ceil(totalUsers / limit),
+            totalUsers,
             data: users,
         });
     }
@@ -507,3 +498,97 @@ const deleteUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 });
 exports.deleteUser = deleteUser;
+const uploadCSV = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        // Check if file is uploaded
+        if (!req.file) {
+            res.status(400).json({ message: "No file uploaded" });
+            return;
+        }
+        // Validate access token
+        const accessToken = req.headers["access_token"];
+        if (!accessToken || accessToken !== process.env.ACCESS_TOKEN) {
+            res.status(403).json({ message: "Unauthorized: Invalid Access Token" });
+            return;
+        }
+        // Validate file type
+        const allowedMimeTypes = ["text/csv", "application/vnd.ms-excel"];
+        if (!allowedMimeTypes.includes(req.file.mimetype)) {
+            res.status(400).json({ message: "Invalid file type. Only CSV files are allowed." });
+            return;
+        }
+        // Convert CSV buffer to string
+        const csvBuffer = req.file.buffer.toString("utf-8");
+        // Parse CSV to JSON
+        const { data } = papaparse_1.default.parse(csvBuffer, {
+            header: true, // Treat first row as headers
+            skipEmptyLines: true,
+            dynamicTyping: true, // Convert numbers to actual numbers
+        });
+        // Send response
+        res.status(200).json({
+            message: "CSV processed successfully",
+            data, // Parsed JSON data
+        });
+    }
+    catch (err) {
+        console.error("CSV Processing Error:", err);
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal Server Error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.uploadCSV = uploadCSV;
+const createUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { email, name, phone, addresses } = req.body;
+        // Validate required fields
+        if (!email || !name || !phone) {
+            res.status(400).json({ message: "Email, name, and phone are required" });
+            return;
+        }
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            res.status(400).json({ message: "Invalid email format" });
+            return;
+        }
+        // Validate phone number format (basic example)
+        const phoneRegex = /^[0-9]{10,15}$/;
+        if (!phoneRegex.test(phone)) {
+            res.status(400).json({ message: "Invalid phone number" });
+            return;
+        }
+        // Validate addresses if provided
+        if (addresses && !Array.isArray(addresses)) {
+            res.status(400).json({ message: "Addresses must be an array" });
+            return;
+        }
+        // Check if user already exists
+        const existingUser = yield user_model_1.default.findOne({ email });
+        if (existingUser) {
+            res.status(400).json({ message: "User already exists" });
+            return;
+        }
+        // Create a new user
+        const newUser = new user_model_1.default({
+            email,
+            name,
+            phone,
+            addresses: addresses || [], // Ensure addresses is an array
+            role: "user",
+        });
+        yield newUser.save();
+        res.status(201).json({ message: "User created successfully", data: newUser });
+    }
+    catch (err) {
+        console.error("User Creation Error:", err);
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.createUser = createUser;

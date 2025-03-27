@@ -8,6 +8,8 @@ import { InterServerError, SuccessResponse } from "../types/types/types";
 import { SortOrder } from "mongoose";
 import { IAddress, IUser } from "../types/interface/interface";
 import cache from "../config/cache";
+import Papa from "papaparse";
+
 // Create Multiple Products
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -439,40 +441,33 @@ export const searchProducts = async (req: Request, res: Response): Promise<void>
     }
 
 }
-export const getAllUsers = async(req: Request, res: Response): Promise<void> => {
+export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
     try {
         const query = req.query.role as string;
-        if (query) {
-            if(query !== "admin" && query !== "user"){
+        const page = parseInt(req.query.page as string) || 1;  // Default to page 1
+        const limit = parseInt(req.query.limit as string) || 10; // Default to 10 users per page
+        const skip = (page - 1) * limit; // Calculate how many documents to skip
+
+        let filter = {};
+        
+        if (query ) {
+            if (query !== "admin" && query !== "user") {
                 res.status(400).json({ message: "Invalid role query" });
                 return;
             }
-            else {
-                if(query  === "admin"){
-                    const users = await User.find({ role: "admin" }).select("-password");
-                    res.status(200).json({
-                        statusCode: 200,
-                        message: "Admin users retrieved successfully",
-                        data: users,
-                    });
-                    return;
-                }
-                else{
-                    
-                    const users = await User.find({ role: { $ne: "admin" } }).select("-password");
-                    res.status(200).json({
-                        statusCode: 200,
-                        message: "Users retrieved successfully",
-                        data: users,
-                    });
-                    return;
-                }
-            }
+            filter = query === "admin" ? { role: "admin" } : { role: { $ne: "admin" } };
         }
-        const users = await User.find({}).select("-password");
+
+        // Get total user count
+        const totalUsers = await User.countDocuments(filter);
+        const users = await User.find(filter).select("-password").skip(skip).limit(limit);
+
         res.status(200).json({
             statusCode: 200,
             message: "Users retrieved successfully",
+            currentPage: page,
+            totalPages: Math.ceil(totalUsers / limit),
+            totalUsers,
             data: users,
         });
     } catch (error: any) {
@@ -483,7 +478,7 @@ export const getAllUsers = async(req: Request, res: Response): Promise<void> => 
             stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
         });
     }
-}
+};
 export const updateUserDetails = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id, data }: { id: string; data: Partial<IUser> } = req.body;
@@ -562,6 +557,113 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
             statusCode: 500,
             message: "Internal server error",
             stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+}
+
+export const uploadCSV = async (req: Request, res: Response): Promise<void> => {
+    try {
+        // Check if file is uploaded
+        if (!req.file) {
+             res.status(400).json({ message: "No file uploaded" });
+             return 
+        }
+
+        // Validate access token
+        const accessToken = req.headers["access_token"];
+        if (!accessToken || accessToken !== process.env.ACCESS_TOKEN) {
+             res.status(403).json({ message: "Unauthorized: Invalid Access Token" });
+             return
+        }
+
+        // Validate file type
+        const allowedMimeTypes = ["text/csv", "application/vnd.ms-excel"];
+        if (!allowedMimeTypes.includes(req.file.mimetype)) {
+             res.status(400).json({ message: "Invalid file type. Only CSV files are allowed." });
+             return
+        }
+
+        // Convert CSV buffer to string
+        const csvBuffer = req.file.buffer.toString("utf-8");
+
+        // Parse CSV to JSON
+        const { data } = Papa.parse(csvBuffer, {
+            header: true, // Treat first row as headers
+            skipEmptyLines: true,
+            dynamicTyping: true, // Convert numbers to actual numbers
+        });
+
+        // Send response
+        res.status(200).json({
+            message: "CSV processed successfully",
+            data, // Parsed JSON data
+        });
+
+    } catch (err: unknown) {
+        console.error("CSV Processing Error:", err);
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal Server Error",
+            stack: process.env.NODE_ENV === "development" ? (err as Error).stack : undefined,
+        });
+    }
+};
+
+export const createUser = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { email, name, phone, addresses } = req.body as Partial<IUser>;
+
+        // Validate required fields
+        if (!email || !name || !phone) {
+            res.status(400).json({ message: "Email, name, and phone are required" });
+            return;
+        }
+
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            res.status(400).json({ message: "Invalid email format" });
+            return;
+        }
+
+        // Validate phone number format (basic example)
+        const phoneRegex = /^[0-9]{10,15}$/;
+        if (!phoneRegex.test(phone)) {
+            res.status(400).json({ message: "Invalid phone number" });
+            return;
+        }
+
+        // Validate addresses if provided
+        if (addresses && !Array.isArray(addresses)) {
+            res.status(400).json({ message: "Addresses must be an array" });
+            return;
+        }
+
+        // Check if user already exists
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            res.status(400).json({ message: "User already exists" });
+            return;
+        }
+
+        // Create a new user
+        const newUser = new User({
+            email,
+            name,
+            phone,
+            addresses: addresses || [], // Ensure addresses is an array
+            role: "user",
+        });
+
+        await newUser.save();
+
+        res.status(201).json({ message: "User created successfully", data: newUser });
+
+    } catch (err: unknown) {
+        console.error("User Creation Error:", err);
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? (err as Error).stack : undefined,
         });
     }
 };

@@ -17,8 +17,20 @@ const productSchema = new Schema<IProduct>(
       trim: true,
       minlength: [10, "Description must be at least 10 characters"],
     },
-
-    // Pricing & Inventory
+    unit :{
+      type: String,
+      required: [true, "Unit is required"],
+      trim: true,
+      default: "450-550g"
+    },
+    actualPrice : {
+      type: Number,
+      required: [true, "Actual Price is required"],
+      min: [0, "Price must be a positive number"],
+      default : function() {
+        return this.price
+      }
+    },
     price: {
       type: Number,
       required: [true, "Price is required"],
@@ -30,7 +42,6 @@ const productSchema = new Schema<IProduct>(
       min: [0, "Stock cannot be negative"],
     },
 
-    // Classification
     category: {
       type: String,
       required: [true, "Category is required"],

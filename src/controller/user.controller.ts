@@ -74,6 +74,13 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
         
        
         const user = await User.findOne({ email });
+        if (!user) {
+            res.status(400).json({ msg: "User not found" });
+            return;
+        }
+
+        user.isActivate= true;
+        await user.save();
         const successResponse:SuccessResponse = {
             message : "OTP verified successfully",
             statusCode : 200,

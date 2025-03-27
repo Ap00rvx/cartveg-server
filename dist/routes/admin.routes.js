@@ -1,8 +1,12 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const admin_controller_1 = require("../controller/admin.controller");
 const express_1 = require("express");
 const admin_middleware_1 = require("../middleware/admin.middleware");
+const csv_buffer_1 = __importDefault(require("../config/csv-buffer"));
 const router = (0, express_1.Router)();
 router.put("/updateProductStock", admin_middleware_1.adminMiddleware, admin_controller_1.updateProductStock);
 router.put("/updateProductDetails", admin_middleware_1.adminMiddleware, admin_controller_1.updateProductDetails);
@@ -11,6 +15,8 @@ router.put("/updateProductAvailability", admin_middleware_1.adminMiddleware, adm
 router.put("/user/update", admin_middleware_1.adminMiddleware, admin_controller_1.updateUserDetails);
 router.post("/createAdminUser", admin_middleware_1.adminMiddleware, admin_controller_1.createAdminUser);
 router.post("/createProducts", admin_middleware_1.adminMiddleware, admin_controller_1.createMultipleProducts);
+router.post("/upload-csv", csv_buffer_1.default, admin_controller_1.uploadCSV);
+router.post("/user/create", admin_middleware_1.adminMiddleware, admin_controller_1.createUser);
 router.post("/login", admin_controller_1.adminLogin);
 router.get("/products", admin_middleware_1.adminMiddleware, admin_controller_1.getAllProducts);
 router.get("/search", admin_middleware_1.adminMiddleware, admin_controller_1.searchProducts);
