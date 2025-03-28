@@ -12,8 +12,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getProductCategories = void 0;
+exports.getInvoice = exports.getProductCategories = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
+const invoice_model_1 = __importDefault(require("../models/invoice.model"));
 const getProductCategories = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const categories = yield product_model_1.default.distinct("category");
@@ -34,3 +35,28 @@ const getProductCategories = (req, res) => __awaiter(void 0, void 0, void 0, fun
     }
 });
 exports.getProductCategories = getProductCategories;
+const getInvoice = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const invoiceId = req.query.invoiceId;
+    if (!invoiceId) {
+        res.status(400).json({ message: "Missing invoiceId" });
+        return;
+    }
+    try {
+        const invoice = yield invoice_model_1.default.findOne({ invoiceId });
+        if (!invoice) {
+            res.status(404).json({ message: "Invoice not found" });
+            return;
+        }
+        res.status(200).json({ invoice });
+    }
+    catch (err) {
+        const errorResponse = {
+            statusCode: 500,
+            message: "Internal server error",
+            stack: err.stack
+        };
+        res.status(500).json(errorResponse);
+        return;
+    }
+});
+exports.getInvoice = getInvoice;

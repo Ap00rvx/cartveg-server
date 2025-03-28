@@ -12,13 +12,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createUser = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
+exports.getAllOrders = exports.createUser = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const helpers_1 = require("../config/helpers");
 const cache_1 = __importDefault(require("../config/cache"));
 const papaparse_1 = __importDefault(require("papaparse"));
+const order_model_1 = __importDefault(require("../models/order.model"));
 // Create Multiple Products
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -592,3 +593,52 @@ const createUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 });
 exports.createUser = createUser;
+const getAllOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        // Extract page and limit from query params, with default values
+        let page = parseInt(req.query.page) || 1;
+        let limit = parseInt(req.query.limit) || 10;
+        let userId = req.query.userId;
+        let sortBy = req.query.sortBy; // Can be "price" or "date"
+        let sortOrder = req.query.sortOrder; // Can be "asc" or "desc"
+        if (page < 1)
+            page = 1;
+        if (limit < 1)
+            limit = 10;
+        // Calculate the number of documents to skip
+        const skip = (page - 1) * limit;
+        // Default sorting (latest orders first)
+        const sortFilter = { orderDate: -1 };
+        // Apply user-defined sorting if valid
+        if (sortBy && (sortBy === "price" || sortBy === "date")) {
+            sortFilter[sortBy === "date" ? "orderDate" : "totalAmount"] = sortOrder === "asc" ? 1 : -1;
+        }
+        // Fetch orders with pagination
+        const orders = yield order_model_1.default.find(userId ? { userId } : {} // Filter by userId if provided
+        )
+            .sort(sortFilter)
+            .skip(skip)
+            .limit(limit)
+            .populate("userId", "name email phone")
+            .populate({
+            path: "products.productId", // Populate product details inside the array
+            model: "Product", // Ensure it's referring to the correct model
+            select: "name price image stock category", // Select relevant fields
+        })
+            .exec();
+        // Get total count of orders
+        const totalOrders = yield order_model_1.default.countDocuments();
+        res.status(200).json({
+            message: "Orders fetched successfully",
+            currentPage: page,
+            totalPages: Math.ceil(totalOrders / limit),
+            totalOrders,
+            orders,
+        });
+    }
+    catch (error) {
+        console.error("Error fetching orders:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+exports.getAllOrders = getAllOrders;

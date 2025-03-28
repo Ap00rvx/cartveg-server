@@ -10,6 +10,9 @@ import userRoutes from './routes/user.routes';
 import productRoutes from "./routes/product.routes";
 import adminRoutes from './routes/admin.routes';
 import commonRoutes from './routes/common.routes';
+import orderRoutes from './routes/order.routes';
+
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +30,7 @@ app.use('/user', userRoutes);
 app.use('/product', productRoutes);
 app.use('/admin', adminRoutes);
 app.use('/common', commonRoutes);
+app.use('/order', orderRoutes);
 
 (async()=>{
     try {

@@ -6,6 +6,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateAdminToken = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const generateAdminToken = (role, email) => {
-    return jsonwebtoken_1.default.sign({ email, role }, process.env.JWT_SECRET, { expiresIn: "2h" }); // 2 hours
+    return jsonwebtoken_1.default.sign({ email, role }, process.env.JWT_SECRET, { expiresIn: "24h" }); // 2 hours
 };
 exports.generateAdminToken = generateAdminToken;

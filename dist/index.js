@@ -23,6 +23,7 @@ const user_routes_1 = __importDefault(require("./routes/user.routes"));
 const product_routes_1 = __importDefault(require("./routes/product.routes"));
 const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
 const common_routes_1 = __importDefault(require("./routes/common.routes"));
+const order_routes_1 = __importDefault(require("./routes/order.routes"));
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
 app.use((0, morgan_1.default)('dev'));
@@ -37,6 +38,7 @@ app.use('/user', user_routes_1.default);
 app.use('/product', product_routes_1.default);
 app.use('/admin', admin_routes_1.default);
 app.use('/common', common_routes_1.default);
+app.use('/order', order_routes_1.default);
 (() => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield (0, database_1.default)();

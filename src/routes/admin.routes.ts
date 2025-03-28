@@ -1,4 +1,4 @@
-import { updateProductAvailability,updateProductThreshold,updateProductDetails,uploadCSV,updateUserDetails,updateProductStock,createAdminUser,adminLogin,createMultipleProducts,getAllProducts,searchProducts,getAllUsers,deleteUser,createUser} from "../controller/admin.controller";
+import { updateProductAvailability,updateProductThreshold,getAllOrders,updateProductDetails,uploadCSV,updateUserDetails,updateProductStock,createAdminUser,adminLogin,createMultipleProducts,getAllProducts,searchProducts,getAllUsers,deleteUser,createUser} from "../controller/admin.controller";
 import { Router } from "express";
 import { adminMiddleware } from "../middleware/admin.middleware";
 import uploadBuffer from "../config/csv-buffer";
@@ -21,6 +21,7 @@ router.post("/login", adminLogin);
 router.get("/products", adminMiddleware,getAllProducts);
 router.get("/search", adminMiddleware,searchProducts);
 router.get("/users", adminMiddleware,getAllUsers);
+router.get("/orders", adminMiddleware,getAllOrders);
 
 router.delete("/user/delete",adminMiddleware,deleteUser);
 

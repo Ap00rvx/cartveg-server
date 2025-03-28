@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { IUser } from "../types/interface/interface"; 
 import { IAddress } from "../types/interface/interface";
 
-const addressSchema = new mongoose.Schema<IAddress>({
+export const addressSchema = new mongoose.Schema<IAddress>({
     flatno: { type: String, required: true },
     street: { type: String, required: true },
     city: { type: String, required: true },
@@ -23,7 +23,10 @@ const userSchema = new mongoose.Schema<IUser>({
     password: { type: String, default: "",required: function(){
         return this.role === "admin";
     } },
-    orders: [{ type: mongoose.Schema.Types.ObjectId, ref: "Order" }, { default: [] }],
+    orders: {
+        type: [String], //list of string
+        default: [],
+    }
 
     
 },{

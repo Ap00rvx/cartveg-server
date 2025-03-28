@@ -9,7 +9,7 @@ import { SortOrder } from "mongoose";
 import { IAddress, IUser } from "../types/interface/interface";
 import cache from "../config/cache";
 import Papa from "papaparse";
-
+import Order from "../models/order.model";
 // Create Multiple Products
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -665,5 +665,61 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
             message: "Internal server error",
             stack: process.env.NODE_ENV === "development" ? (err as Error).stack : undefined,
         });
+    }
+};
+
+export const getAllOrders = async (req: Request, res: Response): Promise<void> => {
+    try {
+        // Extract page and limit from query params, with default values
+        let page = parseInt(req.query.page as string) || 1;
+        let limit = parseInt(req.query.limit as string) || 10;
+        let userId = req.query.userId as string;
+        let sortBy = req.query.sortBy as string; // Can be "price" or "date"
+        let sortOrder = req.query.sortOrder as string; // Can be "asc" or "desc"
+        
+        if (page < 1) page = 1;
+        if (limit < 1) limit = 10;
+        
+        // Calculate the number of documents to skip
+        const skip = (page - 1) * limit;
+        
+        // Default sorting (latest orders first)
+        const sortFilter: { [key: string]: SortOrder } = { orderDate: -1 };
+        
+        // Apply user-defined sorting if valid
+        if (sortBy && (sortBy === "price" || sortBy === "date")) {
+            sortFilter[sortBy === "date" ? "orderDate" : "totalAmount"] = sortOrder === "asc" ? 1 : -1;
+        }
+
+        // Fetch orders with pagination
+        const orders = await Order.find(
+            userId ? { userId } : {} // Filter by userId if provided
+        )
+        .sort(
+            sortFilter   
+        ) 
+        .skip(skip)
+        .limit(limit)
+        .populate("userId", "name email phone") 
+        .populate({
+            path: "products.productId", // Populate product details inside the array
+            model: "Product", // Ensure it's referring to the correct model
+            select: "name price image stock category", // Select relevant fields
+        })
+        .exec();
+
+        // Get total count of orders
+        const totalOrders = await Order.countDocuments();
+
+        res.status(200).json({
+            message: "Orders fetched successfully",
+            currentPage: page,
+            totalPages: Math.ceil(totalOrders / limit),
+            totalOrders,
+            orders,
+        });
+    } catch (error) {
+        console.error("Error fetching orders:", error);
+        res.status(500).json({ error: "Internal server error" });
     }
 };

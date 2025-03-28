@@ -3,8 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.addressSchema = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
-const addressSchema = new mongoose_1.default.Schema({
+exports.addressSchema = new mongoose_1.default.Schema({
     flatno: { type: String, required: true },
     street: { type: String, required: true },
     city: { type: String, required: true },
@@ -15,7 +16,7 @@ const userSchema = new mongoose_1.default.Schema({
     name: { type: String, default: "" },
     email: { type: String, required: true },
     fcmTokens: [{ type: String }, { default: [] }],
-    addresses: [addressSchema, { default: [] }],
+    addresses: [exports.addressSchema, { default: [] }],
     phone: { type: String, default: "" },
     dob: { type: Date },
     role: { type: String, enum: ["user", "admin"], default: "user" },
@@ -23,7 +24,10 @@ const userSchema = new mongoose_1.default.Schema({
     password: { type: String, default: "", required: function () {
             return this.role === "admin";
         } },
-    orders: [{ type: mongoose_1.default.Schema.Types.ObjectId, ref: "Order" }, { default: [] }],
+    orders: {
+        type: [String], //list of string
+        default: [],
+    }
 }, {
     timestamps: true,
 });

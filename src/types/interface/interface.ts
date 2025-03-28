@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 
 export interface IUser {
     name: string;
@@ -37,3 +38,37 @@ export interface IProduct {
     threshold: number;
     isAvailable: boolean;
 }
+export enum OrderStatus {
+    Placed = "placed",
+    Shipped = "shipped",
+    Delivered = "delivered",
+    Cancelled = "cancelled",
+  }
+
+export enum PaymentStatus {
+    Pending = "pending",
+    Paid = "paid",
+    Failed = "failed",
+} 
+
+export interface IOrder { 
+    orderId: string;  
+    userId: mongoose.Types.ObjectId; 
+    products: {
+        productId: mongoose.Types.ObjectId;
+        
+        quantity: number;
+    }[]; 
+    orderDate: Date;
+    expectedDeliveryDate: Date; 
+    totalAmount: number; 
+    totalItems: number;
+    status: OrderStatus;  
+    isCashOnDelivery: boolean;
+    deliveryAddress: IAddress;
+    invoiceId: string;
+    paymentStatus: PaymentStatus; 
+    rzpPaymentId?: string;
+    rzpOrderId?: string;
+}
+
