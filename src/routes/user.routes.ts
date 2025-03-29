@@ -1,4 +1,4 @@
-import {authenticate,verifyOtp,saveUserDetails} from "../controller/user.controller";
+import {authenticate,verifyOtp,saveUserDetails,saveFCMToken} from "../controller/user.controller";
 import { authenticateUser } from "../middleware/user.middleware";
 import { Router } from "express";
 
@@ -7,5 +7,6 @@ const router = Router();
 router.post("/authenticate",authenticate);
 router.post("/verify-otp",verifyOtp);
 router.post("/save",authenticateUser,saveUserDetails);
+router.post("/save-fcm-token",authenticateUser,saveFCMToken);
 
 export default router;

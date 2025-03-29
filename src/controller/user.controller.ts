@@ -102,6 +102,33 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     }
 };
 
+export const saveFCMToken = async(req:Request,res:Response) => {
+    const fcm = req.body.fcm; 
+    if (!fcm) {
+        res.status(400).json({ msg: "FCM token is required" });
+        return;
+    }
+    const tokenEmail = (req as any).user?.email;
+    if (!tokenEmail) {
+        res.status(401).json({ msg: "Unauthorized" });
+        return;
+    }
+    const user = await User.findOne({ email: tokenEmail });
+    if (!user) {
+        res.status(400).json({ msg: "User not found" });
+        return;
+    }
+    user.fcmTokens.push(fcm);
+    await user.save();
+
+    const successResponse:SuccessResponse = {
+        message : "FCM token saved successfully",
+        statusCode : 200,
+        data : user
+    }
+    res.status(200).json(  successResponse);
+}
+
 export const saveUserDetails = async (req: Request, res: Response): Promise<void> => {
     const { email, name, phone } = req.body;
     if (!email || !name || !phone) {
