@@ -114,7 +114,17 @@ const saveFCMToken = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         res.status(400).json({ msg: "User not found" });
         return;
     }
-    user.fcmTokens.push(fcm);
+    const tokens = user.fcmTokens || [];
+    if (tokens.includes(fcm)) {
+        const successResponse = {
+            message: "FCM token already exists",
+            statusCode: 200,
+            data: user
+        };
+        res.status(200).json(successResponse);
+        return;
+    }
+    tokens.push(fcm);
     yield user.save();
     const successResponse = {
         message: "FCM token saved successfully",
