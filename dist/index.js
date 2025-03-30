@@ -24,6 +24,12 @@ const product_routes_1 = __importDefault(require("./routes/product.routes"));
 const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
 const common_routes_1 = __importDefault(require("./routes/common.routes"));
 const order_routes_1 = __importDefault(require("./routes/order.routes"));
+const firebase_admin_1 = __importDefault(require("firebase-admin"));
+const serviceAccount = require(__dirname + "/service_account.json");
+firebase_admin_1.default.initializeApp({
+    credential: firebase_admin_1.default.credential.cert(serviceAccount),
+    databaseURL: "https://cartveg-c339b.firebaseio.com" // Correct Firebase URL
+});
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
 app.use((0, morgan_1.default)('dev'));

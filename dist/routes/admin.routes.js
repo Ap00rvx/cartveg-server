@@ -17,6 +17,7 @@ router.post("/createAdminUser", admin_middleware_1.adminMiddleware, admin_contro
 router.post("/createProducts", admin_middleware_1.adminMiddleware, admin_controller_1.createMultipleProducts);
 router.post("/upload-csv", csv_buffer_1.default, admin_controller_1.uploadCSV);
 router.post("/user/create", admin_middleware_1.adminMiddleware, admin_controller_1.createUser);
+router.post("/send-notification", admin_middleware_1.adminMiddleware, admin_controller_1.sendNotification);
 router.post("/login", admin_controller_1.adminLogin);
 router.get("/products", admin_middleware_1.adminMiddleware, admin_controller_1.getAllProducts);
 router.get("/search", admin_middleware_1.adminMiddleware, admin_controller_1.searchProducts);

@@ -11,8 +11,14 @@ import productRoutes from "./routes/product.routes";
 import adminRoutes from './routes/admin.routes';
 import commonRoutes from './routes/common.routes';
 import orderRoutes from './routes/order.routes';
+import admin from "firebase-admin"; 
 
+const serviceAccount = require(__dirname + "/service_account.json");
 
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: "https://cartveg-c339b.firebaseio.com" // Correct Firebase URL
+}); 
 
 const app = express();
 const PORT = process.env.PORT || 3000;

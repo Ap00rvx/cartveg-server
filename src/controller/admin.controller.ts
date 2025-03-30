@@ -10,6 +10,7 @@ import { IAddress, IUser } from "../types/interface/interface";
 import cache from "../config/cache";
 import Papa from "papaparse";
 import Order from "../models/order.model";
+import admin from "firebase-admin"
 // Create Multiple Products
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -723,3 +724,32 @@ export const getAllOrders = async (req: Request, res: Response): Promise<void> =
         res.status(500).json({ error: "Internal server error" });
     }
 };
+
+export const sendNotification = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const {fcm, title, body, } = req.body;
+        if (!fcm || !title || !body) {
+            res.status(400).json({ message: "FCM token, title, and body are required" });
+            return;
+        }
+        // Send notification logic here (e.g., using Firebase Cloud Messaging)
+        
+        const message = {
+            notification: {
+                title,
+                body,
+            },
+            token: fcm,
+        };
+        await admin.messaging().send(message);
+        res.status(200).json({ message: "Notification sent successfully" });
+    }catch(err:any){
+        console.error("Error sending notification:", err);
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+
+    
+}

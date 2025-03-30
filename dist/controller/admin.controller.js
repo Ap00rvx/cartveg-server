@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAllOrders = exports.createUser = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
+exports.sendNotification = exports.getAllOrders = exports.createUser = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -20,6 +20,7 @@ const helpers_1 = require("../config/helpers");
 const cache_1 = __importDefault(require("../config/cache"));
 const papaparse_1 = __importDefault(require("papaparse"));
 const order_model_1 = __importDefault(require("../models/order.model"));
+const firebase_admin_1 = __importDefault(require("firebase-admin"));
 // Create Multiple Products
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -642,3 +643,30 @@ const getAllOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* (
     }
 });
 exports.getAllOrders = getAllOrders;
+const sendNotification = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { fcm, title, body, } = req.body;
+        if (!fcm || !title || !body) {
+            res.status(400).json({ message: "FCM token, title, and body are required" });
+            return;
+        }
+        // Send notification logic here (e.g., using Firebase Cloud Messaging)
+        const message = {
+            notification: {
+                title,
+                body,
+            },
+            token: fcm,
+        };
+        yield firebase_admin_1.default.messaging().send(message);
+        res.status(200).json({ message: "Notification sent successfully" });
+    }
+    catch (err) {
+        console.error("Error sending notification:", err);
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.sendNotification = sendNotification;

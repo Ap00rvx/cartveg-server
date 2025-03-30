@@ -23,7 +23,12 @@ export interface IAddress {
     state: string; 
     pincode: string;
 }
-
+export interface INotification {
+    title: string;
+    body: string;
+    image?: string; // Optional field
+    data?: any; // Optional field for additional data
+}
 export interface IProduct {
     name: string;
     description: string;
