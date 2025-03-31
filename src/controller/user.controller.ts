@@ -140,6 +140,31 @@ export const saveFCMToken = async(req:Request,res:Response) => {
     res.status(200).json(  successResponse);
 }
 
+export const getUserDetails = async(req:Request,res:Response)=> {
+
+try {
+    const tokenEmail = (req as any).user?.email;
+    if (!tokenEmail) {
+        res.status(401).json({ msg: "Unauthorized" });
+        return;
+    }
+    const user = await User.findOne({ email: tokenEmail });
+    if (!user) {
+        res.status(400).json({ msg: "User not found" });
+        return;
+    }
+    res.status(200).json({ msg: "User details fetched successfully", user });
+}catch (err: any) {
+    console.error("Error fetching user details:", err);
+    const response: InterServerError = {
+        message: err.message,
+        statusCode: 500,
+        stack: err.stack,
+    };
+    res.status(500).json(response);
+}
+}
+
 export const saveUserDetails = async (req: Request, res: Response): Promise<void> => {
     const { email, name, phone } = req.body;
     if (!email || !name || !phone) {

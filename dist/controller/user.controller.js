@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.saveUserDetails = exports.saveFCMToken = exports.verifyOtp = exports.authenticate = void 0;
+exports.saveUserDetails = exports.getUserDetails = exports.saveFCMToken = exports.verifyOtp = exports.authenticate = void 0;
 const user_model_1 = __importDefault(require("../models/user.model"));
 const otp_model_1 = __importDefault(require("../models/otp.model"));
 const nodemailer_1 = __importDefault(require("../config/nodemailer"));
@@ -134,6 +134,32 @@ const saveFCMToken = (req, res) => __awaiter(void 0, void 0, void 0, function* (
     res.status(200).json(successResponse);
 });
 exports.saveFCMToken = saveFCMToken;
+const getUserDetails = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const tokenEmail = (_a = req.user) === null || _a === void 0 ? void 0 : _a.email;
+        if (!tokenEmail) {
+            res.status(401).json({ msg: "Unauthorized" });
+            return;
+        }
+        const user = yield user_model_1.default.findOne({ email: tokenEmail });
+        if (!user) {
+            res.status(400).json({ msg: "User not found" });
+            return;
+        }
+        res.status(200).json({ msg: "User details fetched successfully", user });
+    }
+    catch (err) {
+        console.error("Error fetching user details:", err);
+        const response = {
+            message: err.message,
+            statusCode: 500,
+            stack: err.stack,
+        };
+        res.status(500).json(response);
+    }
+});
+exports.getUserDetails = getUserDetails;
 const saveUserDetails = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const { email, name, phone } = req.body;
