@@ -16,10 +16,13 @@ router.put("/user/update", admin_middleware_1.adminMiddleware, admin_controller_
 router.post("/createAdminUser", admin_middleware_1.adminMiddleware, admin_controller_1.createAdminUser);
 router.post("/createProducts", admin_middleware_1.adminMiddleware, admin_controller_1.createMultipleProducts);
 router.post("/upload-csv", csv_buffer_1.default, admin_controller_1.uploadCSV);
+router.get("/product-csv", admin_controller_1.exportProductCSV);
 router.post("/user/create", admin_middleware_1.adminMiddleware, admin_controller_1.createUser);
 router.post("/send-notification", admin_middleware_1.adminMiddleware, admin_controller_1.sendNotification);
+router.post("/update/order", admin_middleware_1.adminMiddleware, admin_controller_1.updateOrderStatus);
 router.post("/login", admin_controller_1.adminLogin);
 router.get("/products", admin_middleware_1.adminMiddleware, admin_controller_1.getAllProducts);
+router.get("/p/", admin_middleware_1.adminMiddleware, admin_controller_1.getProductById);
 router.get("/search", admin_middleware_1.adminMiddleware, admin_controller_1.searchProducts);
 router.get("/users", admin_middleware_1.adminMiddleware, admin_controller_1.getAllUsers);
 router.get("/orders", admin_middleware_1.adminMiddleware, admin_controller_1.getAllOrders);

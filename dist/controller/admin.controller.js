@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendNotification = exports.getAllOrders = exports.createUser = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getAllProducts = exports.createMultipleProducts = void 0;
+exports.updateOrderStatus = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.exportProductCSV = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getProductById = exports.getAllProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -21,6 +21,8 @@ const cache_1 = __importDefault(require("../config/cache"));
 const papaparse_1 = __importDefault(require("papaparse"));
 const order_model_1 = __importDefault(require("../models/order.model"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
+const interface_1 = require("../types/interface/interface");
+const json2csv_1 = require("json2csv");
 // Create Multiple Products
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -146,6 +148,29 @@ const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.getAllProducts = getAllProducts;
+const getProductById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const id = req.query.id;
+        if (!id) {
+            res.status(400).json({ message: "Product ID is required" });
+            return;
+        }
+        const product = yield product_model_1.default.findById(id);
+        if (!product) {
+            res.status(404).json({ message: "Product not found" });
+            return;
+        }
+        res.status(200).json({ message: "Product retrieved successfully", data: product });
+        return;
+    }
+    catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.getProductById = getProductById;
 const updateProductStock = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { productId, updatedStockValue } = req.body;
@@ -500,40 +525,96 @@ const deleteUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 });
 exports.deleteUser = deleteUser;
+const mongoose_1 = __importDefault(require("mongoose"));
 const uploadCSV = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const session = yield mongoose_1.default.startSession(); // Start a session
+    session.startTransaction(); // Start transaction
     try {
-        // Check if file is uploaded
         if (!req.file) {
-            res.status(400).json({ message: "No file uploaded" });
-            return;
+            throw new Error("No file uploaded");
         }
-        // Validate access token
         const accessToken = req.headers["access_token"];
         if (!accessToken || accessToken !== process.env.ACCESS_TOKEN) {
-            res.status(403).json({ message: "Unauthorized: Invalid Access Token" });
-            return;
+            throw new Error("Unauthorized: Invalid Access Token");
         }
-        // Validate file type
         const allowedMimeTypes = ["text/csv", "application/vnd.ms-excel"];
         if (!allowedMimeTypes.includes(req.file.mimetype)) {
-            res.status(400).json({ message: "Invalid file type. Only CSV files are allowed." });
-            return;
+            throw new Error("Invalid file type. Only CSV files are allowed.");
         }
-        // Convert CSV buffer to string
         const csvBuffer = req.file.buffer.toString("utf-8");
-        // Parse CSV to JSON
-        const { data } = papaparse_1.default.parse(csvBuffer, {
-            header: true, // Treat first row as headers
+        let { data } = papaparse_1.default.parse(csvBuffer, {
+            header: true,
             skipEmptyLines: true,
-            dynamicTyping: true, // Convert numbers to actual numbers
+            dynamicTyping: true,
         });
-        // Send response
+        let updatedProducts = [];
+        let createdProducts = [];
+        for (const item of data) {
+            if (!item || !item.name || !item.price)
+                continue; // Skip if important fields are missing
+            const productName = item.name.trim();
+            const stock = Number(item.stock) || 0;
+            const threshold = Number(item.threshold) || 0;
+            const isAvailable = stock >= threshold;
+            try {
+                if (item._id) {
+                    const existingProduct = yield product_model_1.default.findOne({ name: productName, _id: item._id }, null, { session });
+                    if (!existingProduct)
+                        continue; // Skip if no existing product found
+                    updatedProducts.push(item.name);
+                    yield product_model_1.default.updateOne({ _id: item._id }, {
+                        $set: {
+                            name: item.name,
+                            description: item.description || "No description available",
+                            price: Number(item.price) || 0,
+                            stock,
+                            category: item.category || "Uncategorized",
+                            origin: item.origin || "Unknown",
+                            shelfLife: item.shelfLife || "7 days",
+                            isAvailable,
+                            actualPrice: Number(item.actualPrice) || Number(item.price) || 0,
+                            threshold,
+                            unit: item.unit || "500g",
+                        },
+                    }, { session });
+                }
+                else {
+                    createdProducts.push(item.name);
+                    yield product_model_1.default.insertMany([
+                        {
+                            name: item.name,
+                            description: item.description || "No description available",
+                            price: Number(item.price) || 0,
+                            stock,
+                            category: item.category || "Uncategorized",
+                            origin: item.origin || "Unknown",
+                            shelfLife: item.shelfLife || "7 days",
+                            isAvailable,
+                            actualPrice: Number(item.actualPrice) || Number(item.price) || 0,
+                            threshold,
+                            unit: item.unit || "500g",
+                        },
+                    ], { session });
+                }
+            }
+            catch (err) {
+                console.error(`Error processing product ${item.name}:`, err);
+                // Optionally, handle individual errors for each product and continue
+            }
+        }
+        yield session.commitTransaction();
+        session.endSession();
         res.status(200).json({
-            message: "CSV processed successfully",
-            data, // Parsed JSON data
+            message: "CSV processed and stored successfully",
+            data: {
+                updated: updatedProducts,
+                created: createdProducts,
+            },
         });
     }
     catch (err) {
+        yield session.abortTransaction();
+        session.endSession();
         console.error("CSV Processing Error:", err);
         res.status(500).json({
             statusCode: 500,
@@ -541,8 +622,53 @@ const uploadCSV = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
         });
     }
+    finally {
+        // end session 
+        if (session.inTransaction()) {
+            yield session.abortTransaction();
+        }
+        session.endSession();
+    }
 });
 exports.uploadCSV = uploadCSV;
+const exportProductCSV = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        // Fetch data from MongoDB
+        const products = yield product_model_1.default.find({}).lean(); // Use .lean() to get plain JSON
+        if (!products || products.length === 0) {
+            res.status(404).json({ message: "No products found" });
+            return;
+        }
+        // Define CSV fields
+        const fields = [
+            { label: "_id", value: "_id" },
+            { label: "name", value: "name" },
+            { label: "description", value: "description" },
+            { label: "price", value: "price" },
+            { label: "stock", value: "stock" },
+            { label: "category", value: "category" },
+            { label: "origin", value: "origin" },
+            { label: "shelfLife", value: "shelfLife" },
+            { label: "isAvailable", value: "isAvailable" },
+            { label: "threshold", value: "threshold" },
+            { label: "unit", value: "unit" },
+            { label: "actualPrice", value: "actualPrice" },
+        ];
+        // Convert JSON data to CSV
+        const json2csvParser = new json2csv_1.Parser({ fields });
+        const csvData = json2csvParser.parse(products);
+        // Set response headers for CSV download
+        res.setHeader("Content-Type", "text/csv");
+        res.setHeader("Content-Disposition", 'attachment; filename="products.csv"');
+        // Send CSV data
+        res.status(200).send(csvData);
+    }
+    catch (err) {
+        console.error("CSV Export Error:", err);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+});
+exports.exportProductCSV = exportProductCSV;
 const createUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email, name, phone, addresses } = req.body;
@@ -670,3 +796,33 @@ const sendNotification = (req, res) => __awaiter(void 0, void 0, void 0, functio
     }
 });
 exports.sendNotification = sendNotification;
+const updateOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { orderId, status } = req.body;
+        if (!orderId || !status) {
+            res.status(400).json({ message: "Order ID and status are required" });
+            return;
+        }
+        // Validate status
+        const validStatuses = Object.values(interface_1.OrderStatus);
+        if (!validStatuses.includes(status)) {
+            res.status(400).json({ message: "Invalid order status" });
+            return;
+        }
+        // Update order status
+        const updatedOrder = yield order_model_1.default.findOneAndUpdate({ orderId }, { status }, { new: true });
+        if (!updatedOrder) {
+            res.status(404).json({ message: "Order not found" });
+            return;
+        }
+        res.status(200).json({ message: "Order status updated successfully", data: updatedOrder });
+    }
+    catch (err) {
+        console.error("Error updating order status:", err);
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.updateOrderStatus = updateOrderStatus;

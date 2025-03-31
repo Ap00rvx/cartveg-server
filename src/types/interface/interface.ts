@@ -48,7 +48,7 @@ export enum OrderStatus {
     Shipped = "shipped",
     Delivered = "delivered",
     Cancelled = "cancelled",
-  }
+}
 
 export enum PaymentStatus {
     Pending = "pending",

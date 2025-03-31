@@ -28,7 +28,7 @@ const productSchema = new Schema<IProduct>(
       required: [true, "Actual Price is required"],
       min: [0, "Price must be a positive number"],
       default : function() {
-        return this.price
+        return this.price 
       }
     },
     price: {
