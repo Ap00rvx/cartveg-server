@@ -187,5 +187,30 @@ const searchProducts = async (req: Request, res: Response): Promise<void> => {
         });
     }
 };
+
+export const getSearchProductList = async (req: Request, res: Response): Promise<void> => {
+    try{
+        // return only id,name and image
+        const products = await Product.find().select("id name image");
+
+        const successResponse: SuccessResponse = {
+            statusCode: 200,
+            message: "Products retrieved successfully",
+            data: products,
+        }
+        res.status(200).json(successResponse);
+
+
+    }catch(err:any){
+        const internalServerError:InterServerError = {
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+
+        }
+        res.status(500).json(internalServerError);
+    }
+}
 export { createProduct, getProducts, searchProducts
 };
+
