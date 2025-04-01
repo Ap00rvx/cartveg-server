@@ -55,6 +55,16 @@ export enum PaymentStatus {
     Paid = "paid",
     Failed = "failed",
 } 
+export interface ICartItem { 
+    productId :  mongoose.Types.ObjectId; 
+    quantity : number; 
+}
+export interface ICart { 
+    userId: mongoose.Types.ObjectId; 
+    cartItems: ICartItem[]; 
+    totalAmount: number; 
+    totalItems: number; 
+}
 
 export interface IOrder { 
     orderId: string;  

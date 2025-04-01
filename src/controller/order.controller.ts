@@ -4,7 +4,7 @@ import { IOrder, OrderStatus, PaymentStatus } from "../types/interface/interface
 import mongoose from "mongoose";
 import Product from "../models/product.model";
 import User from "../models/user.model";
-import { ErrorResponse, SuccessResponse } from "../types/types/types";
+import { ErrorResponse, InterServerError, SuccessResponse } from "../types/types/types";
 import Invoice from "../models/invoice.model";
 export const createOrder = async (req: Request, res: Response) => {
     try {
@@ -182,7 +182,6 @@ export const getUserOrders = async (req: Request, res: Response) => {
          });
     }
 }
-
 export const getOrderById = async (req: Request, res: Response) => {
     try {
         const orderId = req.query.orderId;
@@ -219,4 +218,49 @@ export const getOrderById = async (req: Request, res: Response) => {
             res : `Fetching of order failed due to ${error.message}`
          });
     }
+}
+export const cancelOrder = async(req:Request,res:Response):Promise<void> =>{
+    try{
+        const {orderId} = req.body;
+        if(!orderId){
+            const errorResponse: ErrorResponse = {
+                message: "Missing required fields",
+                statusCode: 400,
+                error: "Bad Request",
+            }
+             res.status(400).json(errorResponse);
+            return 
+        }
+
+        const order = await Order.findOne({orderId});
+        if(!order){
+            const errorResponse: ErrorResponse = {
+                message: "Order not found",
+                statusCode: 404,
+                error: "Not Found",
+            }
+             res.status(404).json(errorResponse);
+            return 
+        }
+
+        if(order.status === OrderStatus.Cancelled){
+            const errorResponse: ErrorResponse = {
+                message: "Order already cancelled",
+                statusCode: 400,
+                error: "Bad Request",
+            }
+             res.status(400).json(errorResponse);
+            return 
+        }
+        order.status = OrderStatus.Cancelled ; 
+        await order.save(); 
+    }catch(err:any){
+        const internalServerErrorResponse:InterServerError ={
+            message : "Internal Server Error", 
+            statusCode : 500,
+            stack : err.stack 
+        } 
+        res.status(500).send(internalServerErrorResponse); 
+    }
+
 }

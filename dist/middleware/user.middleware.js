@@ -20,7 +20,8 @@ const authenticateUser = (req, res, next) => {
         console.log("Token:", token);
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
         console.log("Decoded token:", decoded);
-        req.user = decoded; // Attach user data to request
+        req.user = decoded;
+        console.log(req.user); // Attach user data to request
         next(); // Proceed to the next middleware or route
     }
     catch (err) {

@@ -13,6 +13,7 @@ import Order from "../models/order.model";
 import admin from "firebase-admin"
 import { OrderStatus } from "../types/interface/interface";
 import {Parser} from "json2csv"; 
+import mongoose from "mongoose";
 
 // Create Multiple Products
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
@@ -625,10 +626,6 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
         });
     }
 }
-
-import mongoose from "mongoose";
-
-
 export const uploadCSV = async (req: Request, res: Response): Promise<void> => {
     if (!req.file) {
         res.status(400).json({ message: "No file uploaded" });
@@ -724,7 +721,6 @@ export const uploadCSV = async (req: Request, res: Response): Promise<void> => {
         });
     }
 };
-
 export const exportProductCSV = async(req:Request, res:Response):Promise<void>  => {
     try {
         // Fetch data from MongoDB
@@ -824,7 +820,6 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
         });
     }
 };
-
 export const getAllOrders = async (req: Request, res: Response): Promise<void> => {
     try {
         // Extract page and limit from query params, with default values
@@ -880,7 +875,6 @@ export const getAllOrders = async (req: Request, res: Response): Promise<void> =
         res.status(500).json({ error: "Internal server error" });
     }
 };
-
 export const sendNotification = async (req: Request, res: Response): Promise<void> => {
     try {
         const {fcm, title, body, } = req.body;
@@ -937,7 +931,7 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
             return;
         }
 
-        res.status(200).json({ message: "Order status updated successfully", data: updatedOrder });
+       res.status(200).json({ message: "Order status updated successfully", data: updatedOrder });
     } catch (err:any) {
         console.error("Error updating order status:", err);
         res.status(500).json({
@@ -945,5 +939,4 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
             stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
         });
     }
-
 }

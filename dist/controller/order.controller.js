@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getOrderById = exports.getUserOrders = exports.createOrder = void 0;
+exports.cancelOrder = exports.getOrderById = exports.getUserOrders = exports.createOrder = void 0;
 const order_model_1 = __importDefault(require("../models/order.model"));
 const interface_1 = require("../types/interface/interface");
 const mongoose_1 = __importDefault(require("mongoose"));
@@ -219,3 +219,47 @@ const getOrderById = (req, res) => __awaiter(void 0, void 0, void 0, function* (
     }
 });
 exports.getOrderById = getOrderById;
+const cancelOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { orderId } = req.body;
+        if (!orderId) {
+            const errorResponse = {
+                message: "Missing required fields",
+                statusCode: 400,
+                error: "Bad Request",
+            };
+            res.status(400).json(errorResponse);
+            return;
+        }
+        const order = yield order_model_1.default.findOne({ orderId });
+        if (!order) {
+            const errorResponse = {
+                message: "Order not found",
+                statusCode: 404,
+                error: "Not Found",
+            };
+            res.status(404).json(errorResponse);
+            return;
+        }
+        if (order.status === interface_1.OrderStatus.Cancelled) {
+            const errorResponse = {
+                message: "Order already cancelled",
+                statusCode: 400,
+                error: "Bad Request",
+            };
+            res.status(400).json(errorResponse);
+            return;
+        }
+        order.status = interface_1.OrderStatus.Cancelled;
+        yield order.save();
+    }
+    catch (err) {
+        const internalServerErrorResponse = {
+            message: "Internal Server Error",
+            statusCode: 500,
+            stack: err.stack
+        };
+        res.status(500).send(internalServerErrorResponse);
+    }
+});
+exports.cancelOrder = cancelOrder;

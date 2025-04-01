@@ -21,7 +21,8 @@ export const authenticateUser = (req: AuthRequest, res: Response, next: NextFunc
         console.log("Token:", token);
         const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
         console.log("Decoded token:", decoded);
-        (req as any).user = decoded; // Attach user data to request
+        (req as any).user = decoded; 
+        console.log(req.user); // Attach user data to request
 
         next(); // Proceed to the next middleware or route
     } catch (err) {
