@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateOrderStatus = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.exportProductCSV = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getProductById = exports.getAllProducts = exports.createMultipleProducts = void 0;
+exports.updateOrderStatus = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.exportProductCSV = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -37,8 +37,8 @@ const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, f
         }
         // Validate each product before insertion
         for (const product of products) {
-            const { name, description, price, category, stock, origin, shelfLife } = product;
-            if (!name || !description || !price || !category || !stock || !origin || !shelfLife) {
+            const { name, description, price, category, stock, origin, shelfLife, actualPrice, threshold } = product;
+            if (!name || !description || !price || !category || !stock || !origin || !shelfLife || !actualPrice || !threshold) {
                 res.status(400).json({
                     statusCode: 400,
                     message: "All product fields are required.",
@@ -51,6 +51,12 @@ const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, f
                     message: "Price and stock must be non-negative values.",
                 });
                 return;
+            }
+            if (stock < threshold) {
+                product.isAvailable = false;
+            }
+            else {
+                product.isAvailable = true;
             }
         }
         // Insert products into database
@@ -93,6 +99,36 @@ const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, f
     }
 });
 exports.createMultipleProducts = createMultipleProducts;
+const deleteMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const ids = req.body;
+        // Check if ids array exists and is not empty
+        if (!Array.isArray(ids) || ids.length === 0) {
+            res.status(400).json({
+                statusCode: 400,
+                message: "Request body must contain an array of product IDs.",
+            });
+            return;
+        }
+        // Delete products from database
+        const result = yield product_model_1.default.deleteMany({ _id: { $in: ids } }); //$in is used to match any of the values in the array
+        // Success Response
+        res.status(200).json({
+            statusCode: 200,
+            message: "Products deleted successfully",
+            data: result,
+        });
+    }
+    catch (error) {
+        console.error("Error deleting multiple products:", error);
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: error.stack
+        });
+    }
+});
+exports.deleteMultipleProducts = deleteMultipleProducts;
 const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         // Extract query parameters with defaults

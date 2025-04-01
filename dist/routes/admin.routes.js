@@ -14,6 +14,7 @@ router.put("/updateProductThreshold", admin_middleware_1.adminMiddleware, admin_
 router.put("/updateProductAvailability", admin_middleware_1.adminMiddleware, admin_controller_1.updateProductAvailability);
 router.put("/user/update", admin_middleware_1.adminMiddleware, admin_controller_1.updateUserDetails);
 router.post("/createAdminUser", admin_middleware_1.adminMiddleware, admin_controller_1.createAdminUser);
+router.delete("/deleteProducts", admin_middleware_1.adminMiddleware, admin_controller_1.deleteMultipleProducts);
 router.post("/createProducts", admin_middleware_1.adminMiddleware, admin_controller_1.createMultipleProducts);
 router.post("/upload-csv", csv_buffer_1.default, admin_controller_1.uploadCSV);
 router.get("/product-csv", admin_controller_1.exportProductCSV);

@@ -1,4 +1,4 @@
-import { updateProductAvailability,updateProductThreshold,sendNotification,getAllOrders,updateProductDetails,uploadCSV,updateUserDetails,updateProductStock,createAdminUser,adminLogin,createMultipleProducts,getProductById,exportProductCSV,getAllProducts,searchProducts,getAllUsers,deleteUser,createUser,updateOrderStatus} from "../controller/admin.controller";
+import { updateProductAvailability,updateProductThreshold,sendNotification,getAllOrders,updateProductDetails,uploadCSV,updateUserDetails,updateProductStock,createAdminUser,adminLogin,createMultipleProducts,deleteMultipleProducts,getProductById,exportProductCSV,getAllProducts,searchProducts,getAllUsers,deleteUser,createUser,updateOrderStatus} from "../controller/admin.controller";
 import { Router } from "express";
 import { adminMiddleware } from "../middleware/admin.middleware";
 import uploadBuffer from "../config/csv-buffer";
@@ -13,6 +13,7 @@ router.put("/user/update",adminMiddleware,updateUserDetails);
 
 
 router.post("/createAdminUser", adminMiddleware,createAdminUser);
+router.delete("/deleteProducts", adminMiddleware,deleteMultipleProducts);
 router.post("/createProducts", adminMiddleware,createMultipleProducts);
 router.post("/upload-csv",uploadBuffer,uploadCSV)
 router.get("/product-csv",exportProductCSV);

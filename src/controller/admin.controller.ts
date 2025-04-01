@@ -30,9 +30,9 @@ export const createMultipleProducts = async (req: Request, res: Response): Promi
 
         // Validate each product before insertion
         for (const product of products) {
-            const { name, description, price, category, stock, origin, shelfLife } = product;
+            const { name, description, price, category, stock, origin, shelfLife,actualPrice, threshold } = product;
 
-            if (!name || !description || !price || !category || !stock || !origin || !shelfLife) {
+            if (!name || !description || !price || !category || !stock || !origin || !shelfLife || !actualPrice || !threshold) {
                 res.status(400).json({
                     statusCode: 400,
                     message: "All product fields are required.",
@@ -46,6 +46,13 @@ export const createMultipleProducts = async (req: Request, res: Response): Promi
                     message: "Price and stock must be non-negative values.",
                 });
                 return;
+            }
+
+            if(stock < threshold){
+                product.isAvailable = false;
+            }
+            else{
+                product.isAvailable = true; 
             }
         }
 
@@ -93,6 +100,37 @@ export const createMultipleProducts = async (req: Request, res: Response): Promi
         res.status(500).json(internalServerErrorResponse);
     }
 };
+export const deleteMultipleProducts = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const  ids  = req.body;
+
+        // Check if ids array exists and is not empty
+        if (!Array.isArray(ids) || ids.length === 0) {
+            res.status(400).json({
+                statusCode: 400,
+                message: "Request body must contain an array of product IDs.",
+            });
+            return;
+        }
+
+        // Delete products from database
+        const result = await Product.deleteMany({ _id: { $in: ids } }); //$in is used to match any of the values in the array
+
+        // Success Response
+        res.status(200).json({
+            statusCode: 200,
+            message: "Products deleted successfully",
+            data: result,
+        });
+    } catch (error: any) {
+        console.error("Error deleting multiple products:", error);
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: error.stack
+        });
+    }
+}
 export const getAllProducts = async (req: Request, res: Response): Promise<void> => {
     try {
         // Extract query parameters with defaults
