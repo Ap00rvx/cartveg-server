@@ -39,6 +39,8 @@ const getUserCart = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             name: item.productId.name,
             price: item.productId.price,
             quantity: item.quantity,
+            image: item.productId.image,
+            actualPrice: item.productId.actualPrice,
             totalPrice: item.productId.price * item.quantity
         }));
         res.status(200).json({
