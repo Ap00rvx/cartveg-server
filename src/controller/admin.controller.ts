@@ -590,131 +590,103 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 
 import mongoose from "mongoose";
 
+
 export const uploadCSV = async (req: Request, res: Response): Promise<void> => {
-    const session = await mongoose.startSession(); // Start a session
-    session.startTransaction(); // Start transaction
+    if (!req.file) {
+        res.status(400).json({ message: "No file uploaded" });
+        return;
+    }
+
+    if (req.headers["access_token"] !== process.env.ACCESS_TOKEN) {
+        res.status(401).json({ message: "Unauthorized: Invalid Access Token" });
+        return;
+    }
+
+    const allowedMimeTypes = ["text/csv", "application/vnd.ms-excel"];
+    if (!allowedMimeTypes.includes(req.file.mimetype)) {
+        res.status(400).json({ message: "Invalid file type. Only CSV files are allowed." });
+        return;
+    }
+
+    const csvBuffer = req.file.buffer.toString("utf-8");
+
+    let { data } = Papa.parse(csvBuffer, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: true,
+    });
+
+    if (!data.length) {
+        res.status(400).json({ message: "Empty CSV file" });
+        return;
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
     try {
-        if (!req.file) {
-            throw new Error("No file uploaded");
-        }
-
-        const accessToken = req.headers["access_token"];
-        if (!accessToken || accessToken !== process.env.ACCESS_TOKEN) {
-            throw new Error("Unauthorized: Invalid Access Token");
-        }
-
-        const allowedMimeTypes = ["text/csv", "application/vnd.ms-excel"];
-        if (!allowedMimeTypes.includes(req.file.mimetype)) {
-            throw new Error("Invalid file type. Only CSV files are allowed.");
-        }
-
-        const csvBuffer = req.file.buffer.toString("utf-8");
-
-        let { data } = Papa.parse(csvBuffer, {
-            header: true,
-            skipEmptyLines: true,
-            dynamicTyping: true,
-        });
-
-        let updatedProducts: string[] = [];
-        let createdProducts: string[] = [];
+        const bulkOperations: any[] = [];
+        const updatedProducts: string[] = [];
+        const createdProducts: string[] = [];
 
         for (const item of data as any[]) {
-            if (!item || !item.name || !item.price) continue; // Skip if important fields are missing
+            if (!item.name || !item.price) continue;
 
-            const productName = item.name.trim();
             const stock = Number(item.stock) || 0;
             const threshold = Number(item.threshold) || 0;
             const isAvailable = stock >= threshold;
+            const productData = {
+                name: item.name.trim(),
+                description: item.description || "No description available",
+                price: Number(item.price) || 0,
+                stock,
+                category: item.category || "Uncategorized",
+                origin: item.origin || "Unknown",
+                shelfLife: item.shelfLife || "7 days",
+                isAvailable,
+                actualPrice: Number(item.actualPrice) || Number(item.price) || 0,
+                threshold,
+                unit: item.unit || "500g",
+            };
 
-            try {
-                if (item._id) {
-                    const existingProduct = await Product.findOne(
-                        { name: productName, _id: item._id },
-                        null,
-                        { session }
-                    );
-
-                    if (!existingProduct) continue; // Skip if no existing product found
-                    updatedProducts.push(item.name);
-
-                    await Product.updateOne(
-                        { _id: item._id },
-                        {
-                            $set: {
-                                name: item.name,
-                                description: item.description || "No description available",
-                                price: Number(item.price) || 0,
-                                stock,
-                                category: item.category || "Uncategorized",
-                                origin: item.origin || "Unknown",
-                                shelfLife: item.shelfLife || "7 days",
-                                isAvailable,
-                                actualPrice: Number(item.actualPrice) || Number(item.price) || 0,
-                                threshold,
-                                unit: item.unit || "500g",
-                            },
-                        },
-                        { session }
-                    );
-                } else {
-                    createdProducts.push(item.name);
-
-                    await Product.insertMany(
-                        [
-                            {
-                                name: item.name,
-                                description: item.description || "No description available",
-                                price: Number(item.price) || 0,
-                                stock,
-                                category: item.category || "Uncategorized",
-                                origin: item.origin || "Unknown",
-                                shelfLife: item.shelfLife || "7 days",
-                                isAvailable,
-                                actualPrice: Number(item.actualPrice) || Number(item.price) || 0,
-                                threshold,
-                                unit: item.unit || "500g",
-                            },
-                        ],
-                        { session }
-                    );
-                }
-            } catch (err) {
-                console.error(`Error processing product ${item.name}:`, err);
-                // Optionally, handle individual errors for each product and continue
+            if (item._id) {
+                bulkOperations.push({
+                    updateOne: {
+                        filter: { _id: item._id },
+                        update: { $set: productData },
+                        upsert: false, // Only update existing products
+                    },
+                });
+                updatedProducts.push(item.name);
+            } else {
+                bulkOperations.push({ insertOne: { document: productData } });
+                createdProducts.push(item.name);
             }
+        }
+
+        if (bulkOperations.length > 0) {
+            await Product.bulkWrite(bulkOperations, { session, ordered: false });
         }
 
         await session.commitTransaction();
         session.endSession();
 
         res.status(200).json({
-            message: "CSV processed and stored successfully",
-            data: {
-                updated: updatedProducts,
-                created: createdProducts,
-            },
+            message: "CSV processed successfully",
+            data: { updated: updatedProducts, created: createdProducts },
         });
-    } catch (err: unknown) {
+    } catch (error) {
         await session.abortTransaction();
         session.endSession();
 
-        console.error("CSV Processing Error:", err);
+        console.error("CSV Processing Error:", error);
         res.status(500).json({
-            statusCode: 500,
             message: "Internal Server Error",
-            stack: process.env.NODE_ENV === "development" ? (err as Error).stack : undefined,
+            stack: (error as Error).stack 
         });
     }
-    finally{
-        // end session 
-        if (session.inTransaction()) {
-            await session.abortTransaction();
-        }
-        session.endSession();
-    }
 };
+
 export const exportProductCSV = async(req:Request, res:Response):Promise<void>  => {
     try {
         // Fetch data from MongoDB
