@@ -15,7 +15,7 @@ import { OrderStatus } from "../types/interface/interface";
 import {Parser} from "json2csv"; 
 import mongoose from "mongoose";
 
-// Create Multiple Products
+
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
         const products = req.body;
@@ -319,7 +319,7 @@ export const updateProductAvailability = async (req: Request, res: Response): Pr
         });
     }
 }
-export  const updateProductThreshold = async (req: Request, res: Response): Promise<void> => {
+export const updateProductThreshold = async (req: Request, res: Response): Promise<void> => {
     try {
         const { productId, threshold } = req.body;
 
@@ -940,3 +940,4 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
         });
     }
 }
+

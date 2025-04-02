@@ -24,7 +24,6 @@ const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const interface_1 = require("../types/interface/interface");
 const json2csv_1 = require("json2csv");
 const mongoose_1 = __importDefault(require("mongoose"));
-// Create Multiple Products
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const products = req.body;

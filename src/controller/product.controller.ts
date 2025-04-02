@@ -187,6 +187,19 @@ const searchProducts = async (req: Request, res: Response): Promise<void> => {
         });
     }
 };
+export const getAvailableProductIds = async(req:Request,res:Response):Promise<void> =>{
+    try{
+        const products = await Product.find({isAvailable:true}).select("id"); 
+        const ids = products.map((product) => product.id); 
+        res.status(200).json(ids);
+    }catch(err:any){
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+}
 
 export const getSearchProductList = async (req: Request, res: Response): Promise<void> => {
     try{
@@ -213,4 +226,7 @@ export const getSearchProductList = async (req: Request, res: Response): Promise
 }
 export { createProduct, getProducts, searchProducts
 };
+
+
+
 

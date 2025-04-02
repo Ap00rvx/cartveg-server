@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.searchProducts = exports.getProducts = exports.createProduct = exports.getSearchProductList = void 0;
+exports.searchProducts = exports.getProducts = exports.createProduct = exports.getSearchProductList = exports.getAvailableProductIds = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const node_cache_1 = __importDefault(require("node-cache"));
 const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -174,6 +174,21 @@ const searchProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.searchProducts = searchProducts;
+const getAvailableProductIds = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const products = yield product_model_1.default.find({ isAvailable: true }).select("id");
+        const ids = products.map((product) => product.id);
+        res.status(200).json(ids);
+    }
+    catch (err) {
+        res.status(500).json({
+            statusCode: 500,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.getAvailableProductIds = getAvailableProductIds;
 const getSearchProductList = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         // return only id,name and image

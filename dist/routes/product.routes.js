@@ -6,4 +6,5 @@ const router = (0, express_1.Router)();
 router.get("/", product_controller_1.getProducts);
 router.get("/list", product_controller_1.getSearchProductList); // 
 router.get("/search", product_controller_1.searchProducts);
+router.get("/ids", product_controller_1.getAvailableProductIds);
 exports.default = router;
