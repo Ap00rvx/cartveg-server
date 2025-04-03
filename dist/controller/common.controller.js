@@ -17,12 +17,45 @@ const product_model_1 = __importDefault(require("../models/product.model"));
 const invoice_model_1 = __importDefault(require("../models/invoice.model"));
 const getProductCategories = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const categories = yield product_model_1.default.distinct("category");
-        if (categories.length === 0) {
-            res.status(400).json({ message: "No categories found" });
+        // Get all products first
+        const products = yield product_model_1.default.find({}, { category: 1, _id: 0 });
+        if (products.length === 0) {
+            res.status(404).json({
+                message: "No products found",
+                statusCode: 404,
+                error: "Not Found"
+            });
             return;
         }
-        res.status(200).json({ categories });
+        // Extract and normalize categories (convert to lowercase for comparison)
+        const categoriesMap = new Map();
+        products.forEach(product => {
+            if (product.category) {
+                // Store with original case but use lowercase as key for uniqueness
+                const lowerCaseCategory = product.category.toLowerCase();
+                // Keep the first occurrence of each category (with its original capitalization)
+                if (!categoriesMap.has(lowerCaseCategory)) {
+                    categoriesMap.set(lowerCaseCategory, product.category);
+                }
+            }
+        });
+        // Convert map values to array (these are the distinct categories with original casing)
+        const categories = Array.from(categoriesMap.values());
+        if (categories.length === 0) {
+            res.status(404).json({
+                message: "No categories found",
+                statusCode: 404,
+                error: "Not Found"
+            });
+            return;
+        }
+        // Sort categories alphabetically (optional)
+        categories.sort();
+        res.status(200).json({
+            message: "Categories retrieved successfully",
+            statusCode: 200,
+            categories
+        });
     }
     catch (error) {
         const errorResponse = {

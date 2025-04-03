@@ -17,11 +17,12 @@ const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const helpers_1 = require("../config/helpers");
+const interface_1 = require("../types/interface/interface");
 const cache_1 = __importDefault(require("../config/cache"));
 const papaparse_1 = __importDefault(require("papaparse"));
 const order_model_1 = __importDefault(require("../models/order.model"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
-const interface_1 = require("../types/interface/interface");
+const interface_2 = require("../types/interface/interface");
 const json2csv_1 = require("json2csv");
 const mongoose_1 = __importDefault(require("mongoose"));
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -815,29 +816,126 @@ const updateOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
     try {
         const { orderId, status } = req.body;
         if (!orderId || !status) {
-            res.status(400).json({ message: "Order ID and status are required" });
+            res.status(400).json({
+                message: "Order ID and status are required",
+                statusCode: 400,
+                error: "Bad Request"
+            });
             return;
         }
         // Validate status
-        const validStatuses = Object.values(interface_1.OrderStatus);
+        const validStatuses = Object.values(interface_2.OrderStatus);
         if (!validStatuses.includes(status)) {
-            res.status(400).json({ message: "Invalid order status" });
+            res.status(400).json({
+                message: "Invalid order status",
+                statusCode: 400,
+                error: "Bad Request"
+            });
             return;
         }
-        // Update order status
+        // If this is a cancellation request, use the cancellation process
+        if (status === interface_2.OrderStatus.Cancelled) {
+            yield handleOrderCancellation(orderId, res);
+            return;
+        }
+        // For other status updates, proceed normally
         const updatedOrder = yield order_model_1.default.findOneAndUpdate({ orderId }, { status }, { new: true });
         if (!updatedOrder) {
-            res.status(404).json({ message: "Order not found" });
+            res.status(404).json({
+                message: "Order not found",
+                statusCode: 404,
+                error: "Not Found"
+            });
             return;
         }
-        res.status(200).json({ message: "Order status updated successfully", data: updatedOrder });
+        res.status(200).json({
+            message: "Order status updated successfully",
+            statusCode: 200,
+            data: updatedOrder
+        });
     }
     catch (err) {
-        console.error("Error updating order status:", err);
-        res.status(500).json({
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        });
+        const internalServerErrorResponse = {
+            message: "Internal Server Error",
+            statusCode: 500,
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined
+        };
+        res.status(500).json(internalServerErrorResponse);
     }
 });
 exports.updateOrderStatus = updateOrderStatus;
+// Helper function to handle order cancellations with transactions
+const handleOrderCancellation = (orderId, res) => __awaiter(void 0, void 0, void 0, function* () {
+    // Start a MongoDB session for transaction
+    const session = yield mongoose_1.default.startSession();
+    session.startTransaction();
+    try {
+        const order = yield order_model_1.default.findOne({ orderId }).session(session);
+        if (!order) {
+            res.status(404).json({
+                message: "Order not found",
+                statusCode: 404,
+                error: "Not Found"
+            });
+            yield session.abortTransaction();
+            session.endSession();
+            return;
+        }
+        if (order.status === interface_2.OrderStatus.Cancelled) {
+            res.status(400).json({
+                message: "Order already cancelled",
+                statusCode: 400,
+                error: "Bad Request"
+            });
+            yield session.abortTransaction();
+            session.endSession();
+            return;
+        }
+        // Restore product stock for each product in the order
+        const products = order.products;
+        for (const item of products) {
+            const product = yield product_model_1.default.findById(item.productId).session(session);
+            if (!product) {
+                res.status(404).json({
+                    message: `Product with ID ${item.productId} not found`,
+                    statusCode: 404,
+                    error: "Not Found"
+                });
+                yield session.abortTransaction();
+                session.endSession();
+                return;
+            }
+            // Increase the stock by the quantity that was ordered
+            product.stock += item.quantity;
+            yield product.save({ session });
+        }
+        // Update order status to cancelled
+        order.status = interface_2.OrderStatus.Cancelled;
+        // If payment was already made and not COD, mark for refund
+        if (!order.isCashOnDelivery && order.paymentStatus === interface_1.PaymentStatus.Paid) {
+            order.paymentStatus = interface_1.PaymentStatus.Refund;
+        }
+        yield order.save({ session });
+        // Commit the transaction
+        yield session.commitTransaction();
+        session.endSession();
+        // Send success response
+        res.status(200).json({
+            message: "Order cancelled successfully",
+            statusCode: 200,
+            data: order,
+            refundStatus: order.paymentStatus === interface_1.PaymentStatus.Refund ? "Pending" : "Not Applicable"
+        });
+    }
+    catch (err) {
+        // Abort the transaction in case of any error
+        yield session.abortTransaction();
+        session.endSession();
+        const internalServerErrorResponse = {
+            message: "Internal Server Error",
+            statusCode: 500,
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined
+        };
+        res.status(500).json(internalServerErrorResponse);
+    }
+});

@@ -219,48 +219,104 @@ export const getOrderById = async (req: Request, res: Response) => {
          });
     }
 }
-export const cancelOrder = async(req:Request,res:Response):Promise<void> =>{
-    try{
-        const {orderId} = req.body;
-        if(!orderId){
-            const errorResponse: ErrorResponse = {
-                message: "Missing required fields",
-                statusCode: 400,
-                error: "Bad Request",
-            }
-             res.status(400).json(errorResponse);
-            return 
+export const cancelOrder = async (req: Request, res: Response): Promise<void> => {
+    // Start a MongoDB session for transaction
+    const session = await mongoose.startSession();
+    session.startTransaction();
+  
+    try {
+      const { orderId } = req.body;
+      if (!orderId) {
+        const errorResponse: ErrorResponse = {
+          message: "Missing required fields",
+          statusCode: 400,
+          error: "Bad Request",
+        };
+        res.status(400).json(errorResponse);
+        return;
+      }
+  
+      const order = await Order.findOne({ orderId }).session(session);
+      if (!order) {
+        const errorResponse: ErrorResponse = {
+          message: "Order not found",
+          statusCode: 404,
+          error: "Not Found",
+        };
+        res.status(404).json(errorResponse);
+        await session.abortTransaction();
+        session.endSession();
+        return;
+      }
+  
+      if (order.status === OrderStatus.Cancelled) {
+        const errorResponse: ErrorResponse = {
+          message: "Order already cancelled",
+          statusCode: 400,
+          error: "Bad Request",
+        };
+        res.status(400).json(errorResponse);
+        await session.abortTransaction();
+        session.endSession();
+        return;
+      }
+  
+      // Restore product stock for each product in the order
+      const products = order.products;
+      for (const item of products) {
+        const product = await Product.findById(item.productId).session(session);
+        if (!product) {
+          const errorResponse: ErrorResponse = {
+            message: `Product with ID ${item.productId} not found`,
+            statusCode: 404,
+            error: "Not Found",
+          };
+          res.status(404).json(errorResponse);
+          await session.abortTransaction();
+          session.endSession();
+          return;
         }
-
-        const order = await Order.findOne({orderId});
-        if(!order){
-            const errorResponse: ErrorResponse = {
-                message: "Order not found",
-                statusCode: 404,
-                error: "Not Found",
-            }
-             res.status(404).json(errorResponse);
-            return 
-        }
-
-        if(order.status === OrderStatus.Cancelled){
-            const errorResponse: ErrorResponse = {
-                message: "Order already cancelled",
-                statusCode: 400,
-                error: "Bad Request",
-            }
-             res.status(400).json(errorResponse);
-            return 
-        }
-        order.status = OrderStatus.Cancelled ; 
-        await order.save(); 
-    }catch(err:any){
-        const internalServerErrorResponse:InterServerError ={
-            message : "Internal Server Error", 
-            statusCode : 500,
-            stack : err.stack 
-        } 
-        res.status(500).send(internalServerErrorResponse); 
+  
+        // Increase the stock by the quantity that was ordered
+        product.stock += item.quantity;
+        await product.save({ session });
+      }
+  
+      // Update order status to cancelled
+      order.status = OrderStatus.Cancelled;
+      
+      // If payment was already made and not COD, mark for refund or track refund status
+      if (!order.isCashOnDelivery && order.paymentStatus === PaymentStatus.Paid) {
+        order.paymentStatus = PaymentStatus.Refund;
+        // Additional refund logic could be implemented here
+      }
+  
+      await order.save({ session });
+  
+      // Commit the transaction
+      await session.commitTransaction();
+      session.endSession();
+  
+      // Send success response
+      const successResponse = {
+        message: "Order cancelled successfully",
+        statusCode: 200,
+        orderId: order.orderId,
+        refundStatus: order.paymentStatus === PaymentStatus.Refund ? "Pending" : "Not Applicable"
+      };
+      
+      res.status(200).json(successResponse);
+  
+    } catch (err: any) {
+      // Abort the transaction in case of any error
+      await session.abortTransaction();
+      session.endSession();
+  
+      const internalServerErrorResponse: InterServerError = {
+        message: "Internal Server Error",
+        statusCode: 500,
+        stack: err.stack
+      };
+      res.status(500).send(internalServerErrorResponse);
     }
-
-}
+  };

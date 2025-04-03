@@ -6,7 +6,7 @@ import {generateAdminToken} from "../config/helpers" ;
 import { sendAdminLoginAlert } from "../config/nodemailer";
 import { InterServerError, SuccessResponse } from "../types/types/types";
 import { SortOrder } from "mongoose";
-import { IAddress, IUser } from "../types/interface/interface";
+import { IAddress, IUser, PaymentStatus } from "../types/interface/interface";
 import cache from "../config/cache";
 import Papa from "papaparse";
 import Order from "../models/order.model";
@@ -908,18 +908,32 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
         const { orderId, status } = req.body;
 
         if (!orderId || !status) {
-            res.status(400).json({ message: "Order ID and status are required" });
+            res.status(400).json({ 
+                message: "Order ID and status are required",
+                statusCode: 400,
+                error: "Bad Request"
+            });
             return;
         }
 
         // Validate status
         const validStatuses = Object.values(OrderStatus);
         if (!validStatuses.includes(status)) {
-            res.status(400).json({ message: "Invalid order status" });
+            res.status(400).json({ 
+                message: "Invalid order status",
+                statusCode: 400,
+                error: "Bad Request"
+            });
             return;
         }
 
-        // Update order status
+        // If this is a cancellation request, use the cancellation process
+        if (status === OrderStatus.Cancelled) {
+            await handleOrderCancellation(orderId, res);
+            return;
+        }
+
+        // For other status updates, proceed normally
         const updatedOrder = await Order.findOneAndUpdate(
             { orderId },
             { status },
@@ -927,17 +941,111 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
         );
 
         if (!updatedOrder) {
-            res.status(404).json({ message: "Order not found" });
+            res.status(404).json({ 
+                message: "Order not found",
+                statusCode: 404,
+                error: "Not Found"
+            });
             return;
         }
 
-       res.status(200).json({ message: "Order status updated successfully", data: updatedOrder });
-    } catch (err:any) {
-        console.error("Error updating order status:", err);
-        res.status(500).json({
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        res.status(200).json({ 
+            message: "Order status updated successfully", 
+            statusCode: 200,
+            data: updatedOrder 
         });
+    } catch (err: any) {
+        const internalServerErrorResponse = {
+            message: "Internal Server Error",
+            statusCode: 500,
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined
+        };
+        res.status(500).json(internalServerErrorResponse);
     }
-}
+};
 
+// Helper function to handle order cancellations with transactions
+const handleOrderCancellation = async (orderId: string, res: Response): Promise<void> => {
+    // Start a MongoDB session for transaction
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const order = await Order.findOne({ orderId }).session(session);
+        if (!order) {
+            res.status(404).json({ 
+                message: "Order not found",
+                statusCode: 404,
+                error: "Not Found"
+            });
+            await session.abortTransaction();
+            session.endSession();
+            return;
+        }
+
+        if (order.status === OrderStatus.Cancelled) {
+            res.status(400).json({ 
+                message: "Order already cancelled",
+                statusCode: 400,
+                error: "Bad Request"
+            });
+            await session.abortTransaction();
+            session.endSession();
+            return;
+        }
+
+        // Restore product stock for each product in the order
+        const products = order.products;
+        for (const item of products) {
+            const product = await Product.findById(item.productId).session(session);
+            if (!product) {
+                res.status(404).json({ 
+                    message: `Product with ID ${item.productId} not found`,
+                    statusCode: 404,
+                    error: "Not Found"
+                });
+                await session.abortTransaction();
+                session.endSession();
+                return;
+            }
+
+            // Increase the stock by the quantity that was ordered
+            product.stock += item.quantity;
+            await product.save({ session });
+        }
+
+        // Update order status to cancelled
+        order.status = OrderStatus.Cancelled;
+        
+        // If payment was already made and not COD, mark for refund
+        if (!order.isCashOnDelivery && order.paymentStatus === PaymentStatus.Paid) {
+            order.paymentStatus = PaymentStatus.Refund;
+        }
+
+        await order.save({ session });
+
+        // Commit the transaction
+        await session.commitTransaction();
+        session.endSession();
+
+        // Send success response
+        res.status(200).json({ 
+            message: "Order cancelled successfully",
+            statusCode: 200,
+            data: order,
+            refundStatus: order.paymentStatus === PaymentStatus.Refund ? "Pending" : "Not Applicable"
+        });
+
+    } catch (err: any) {
+        // Abort the transaction in case of any error
+        await session.abortTransaction();
+        session.endSession();
+
+        const internalServerErrorResponse = {
+            message: "Internal Server Error",
+            statusCode: 500,
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined
+        };
+        res.status(500).json(internalServerErrorResponse);
+    }
+};

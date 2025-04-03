@@ -13,4 +13,5 @@ var PaymentStatus;
     PaymentStatus["Pending"] = "pending";
     PaymentStatus["Paid"] = "paid";
     PaymentStatus["Failed"] = "failed";
+    PaymentStatus["Refund"] = "refund";
 })(PaymentStatus || (exports.PaymentStatus = PaymentStatus = {}));

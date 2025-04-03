@@ -220,6 +220,9 @@ const getOrderById = (req, res) => __awaiter(void 0, void 0, void 0, function* (
 });
 exports.getOrderById = getOrderById;
 const cancelOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    // Start a MongoDB session for transaction
+    const session = yield mongoose_1.default.startSession();
+    session.startTransaction();
     try {
         const { orderId } = req.body;
         if (!orderId) {
@@ -231,7 +234,7 @@ const cancelOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             res.status(400).json(errorResponse);
             return;
         }
-        const order = yield order_model_1.default.findOne({ orderId });
+        const order = yield order_model_1.default.findOne({ orderId }).session(session);
         if (!order) {
             const errorResponse = {
                 message: "Order not found",
@@ -239,6 +242,8 @@ const cancelOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 error: "Not Found",
             };
             res.status(404).json(errorResponse);
+            yield session.abortTransaction();
+            session.endSession();
             return;
         }
         if (order.status === interface_1.OrderStatus.Cancelled) {
@@ -248,12 +253,53 @@ const cancelOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 error: "Bad Request",
             };
             res.status(400).json(errorResponse);
+            yield session.abortTransaction();
+            session.endSession();
             return;
         }
+        // Restore product stock for each product in the order
+        const products = order.products;
+        for (const item of products) {
+            const product = yield product_model_1.default.findById(item.productId).session(session);
+            if (!product) {
+                const errorResponse = {
+                    message: `Product with ID ${item.productId} not found`,
+                    statusCode: 404,
+                    error: "Not Found",
+                };
+                res.status(404).json(errorResponse);
+                yield session.abortTransaction();
+                session.endSession();
+                return;
+            }
+            // Increase the stock by the quantity that was ordered
+            product.stock += item.quantity;
+            yield product.save({ session });
+        }
+        // Update order status to cancelled
         order.status = interface_1.OrderStatus.Cancelled;
-        yield order.save();
+        // If payment was already made and not COD, mark for refund or track refund status
+        if (!order.isCashOnDelivery && order.paymentStatus === interface_1.PaymentStatus.Paid) {
+            order.paymentStatus = interface_1.PaymentStatus.Refund;
+            // Additional refund logic could be implemented here
+        }
+        yield order.save({ session });
+        // Commit the transaction
+        yield session.commitTransaction();
+        session.endSession();
+        // Send success response
+        const successResponse = {
+            message: "Order cancelled successfully",
+            statusCode: 200,
+            orderId: order.orderId,
+            refundStatus: order.paymentStatus === interface_1.PaymentStatus.Refund ? "Pending" : "Not Applicable"
+        };
+        res.status(200).json(successResponse);
     }
     catch (err) {
+        // Abort the transaction in case of any error
+        yield session.abortTransaction();
+        session.endSession();
         const internalServerErrorResponse = {
             message: "Internal Server Error",
             statusCode: 500,

@@ -54,6 +54,7 @@ export enum PaymentStatus {
     Pending = "pending",
     Paid = "paid",
     Failed = "failed",
+    Refund = "refund",
 } 
 export interface ICartItem { 
     productId :  mongoose.Types.ObjectId; 
