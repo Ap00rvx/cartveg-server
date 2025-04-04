@@ -14,8 +14,6 @@ export interface IUser {
     password?: string;
     orders?: string[];
 }
-
-
 export interface IAddress {
     flatno: string;
     street: string;
@@ -66,7 +64,6 @@ export interface ICart {
     totalAmount: number; 
     totalItems: number; 
 }
-
 export interface IOrder { 
     orderId: string;  
     userId: mongoose.Types.ObjectId; 
@@ -84,7 +81,18 @@ export interface IOrder {
     deliveryAddress: IAddress;
     invoiceId: string;
     paymentStatus: PaymentStatus; 
+    shippingAmount :number; 
     rzpPaymentId?: string;
     rzpOrderId?: string;
+}
+export interface ICoupon {
+    minValue  : number; 
+    expiry :Date; 
+    maxUsage: number; 
+    couponCode : string;
+    offValue : String | number;
+    isActive: boolean;
+    isDeleted: boolean;
+    usedUsers : string[]; 
 }
 

@@ -21,9 +21,9 @@ const user_model_1 = __importDefault(require("../models/user.model"));
 const invoice_model_1 = __importDefault(require("../models/invoice.model"));
 const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { userId, products, isCashOnDelivery, deliveryAddress, phone, } = req.body;
+        const { userId, products, isCashOnDelivery, deliveryAddress, phone, shippingAmount } = req.body;
         // Validate required fields
-        if (!userId || !products || !deliveryAddress || !phone) {
+        if (!userId || !products || !deliveryAddress || !phone || !shippingAmount) {
             const errorResponse = {
                 message: "Missing required fields",
                 statusCode: 400,
@@ -67,6 +67,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 yield product.save({ session });
             }
             const invoiceId = `INV-${orderId}`;
+            totalAmount += shippingAmount;
             // Create new order
             const orderDate = new Date();
             const newOrder = new order_model_1.default({
@@ -76,6 +77,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 orderDate,
                 expectedDeliveryDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // Current date + 2 days
                 totalAmount,
+                shippingAmount,
                 totalItems,
                 status: interface_1.OrderStatus.Placed,
                 isCashOnDelivery,

@@ -71,6 +71,13 @@ const orderSchema = new mongoose_1.default.Schema({
         required: true,
         min: 0
     },
+    shippingAmount: {
+        type: Number,
+        required: true,
+        min: 0,
+        default: 0,
+        select: true
+    },
     totalItems: {
         type: Number,
         required: true,

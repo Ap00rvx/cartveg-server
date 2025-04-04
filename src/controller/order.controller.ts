@@ -14,12 +14,13 @@ export const createOrder = async (req: Request, res: Response) => {
             isCashOnDelivery,
             deliveryAddress,
             phone,
+            shippingAmount
         } = req.body;
 
         
 
         // Validate required fields
-        if (!userId || !products  || !deliveryAddress || !phone) {
+        if (!userId || !products  || !deliveryAddress || !phone || !shippingAmount) {
             const errorResponse: ErrorResponse = {
                 message: "Missing required fields",
                 statusCode: 400,
@@ -64,6 +65,7 @@ export const createOrder = async (req: Request, res: Response) => {
                 await product.save({ session });
             }
             const invoiceId = `INV-${orderId}`;  
+            totalAmount += shippingAmount;
 
             // Create new order
             const orderDate =  new Date() ;
@@ -74,6 +76,7 @@ export const createOrder = async (req: Request, res: Response) => {
                 orderDate,
                 expectedDeliveryDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // Current date + 2 days
                 totalAmount,
+                shippingAmount,
                 totalItems,
                 status: OrderStatus.Placed, 
                 isCashOnDelivery,
