@@ -14,6 +14,7 @@ import admin from "firebase-admin"
 import { OrderStatus } from "../types/interface/interface";
 import {Parser} from "json2csv"; 
 import mongoose from "mongoose";
+import Coupon from "../models/coupon.model";
 
 
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
@@ -965,7 +966,7 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
 };
 
 // Helper function to handle order cancellations with transactions
-const handleOrderCancellation = async (orderId: string, res: Response): Promise<void> => {
+ const handleOrderCancellation = async (orderId: string, res: Response): Promise<void> => {
     // Start a MongoDB session for transaction
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -1047,5 +1048,185 @@ const handleOrderCancellation = async (orderId: string, res: Response): Promise<
             stack: process.env.NODE_ENV === "development" ? err.stack : undefined
         };
         res.status(500).json(internalServerErrorResponse);
+    }
+};
+
+export const createCouponCode = async(req: Request, res: Response): Promise<void> => {
+    try {
+        const { code, expiry, minValue, maxUsage, offValue } = req.body;
+        
+        // Validate required fields
+        if(!code || !expiry || !minValue || !maxUsage || !offValue) {
+             res.status(400).json({
+                success: false,
+                message: "All fields are required: code, expiry, minValue, maxUsage, offValue"
+            });
+            return
+        }
+        
+        // Check if coupon code already exists
+        const existingCoupon = await Coupon.findOne({ code });
+        if(existingCoupon) {
+             res.status(400).json({
+                success: false,
+                message: "Coupon code already exists"
+            });
+            return
+        }
+        
+        // Create new coupon
+        const coupon = await Coupon.create({
+            couponCode: code,
+            expiry: new Date(expiry),
+            minValue,
+            maxUsage,
+            offValue
+        });
+        
+         res.status(201).json({
+            success: true,
+            message: "Coupon created successfully",
+            coupon
+        }); return; 
+    } catch(error:any ) {
+        console.error("Error creating coupon:", error);
+         res.status(500).json({
+            success: false,
+            message: "Something went wrong while creating coupon",
+            error: error.message
+        });
+        return; 
+    }
+};
+
+export const getAllCoupons = async(req: Request, res: Response): Promise<void> => {
+    try {
+        const coupons = await Coupon.find({}).lean();
+        
+        if(!coupons || coupons.length === 0) {
+             res.status(404).json({
+                success: false,
+                message: "No coupons found"
+            });
+            return
+        }
+        
+         res.status(200).json({
+            success: true,
+            message: "Coupons fetched successfully",
+            coupons
+        }); return; 
+    } catch(error:any ) {
+        console.error("Error fetching coupons:", error);
+         res.status(500).json({
+            success: false,
+            message: "Something went wrong while fetching coupons",
+            error: error.message
+        });
+        return; 
+    }
+}
+
+export const updateCouponDetails = async(req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.query;
+        const { code, expiry, minValue, maxUsage, offValue } = req.body;
+        
+        // Check if coupon exists
+        const coupon = await Coupon.findById(id);
+        if (!coupon) {
+             res.status(404).json({
+                success: false,
+                message: "Coupon not found"
+            });return
+        }
+        
+        // Create update object with only provided fields
+        const updateData: any = {};
+        if (code !== undefined) updateData.couponCode = code;
+        if (expiry !== undefined) updateData.expiry = new Date(expiry);
+        if (minValue !== undefined) updateData.minValue = minValue;
+        if (maxUsage !== undefined) updateData.maxUsage = maxUsage;
+        if (offValue !== undefined) updateData.offValue = offValue;
+        
+        // If code is being updated, check if new code already exists
+        if (code && code !== coupon.couponCode) {
+            const existingCoupon = await Coupon.findOne({ code });
+            if (existingCoupon) {
+                 res.status(400).json({
+                    success: false,
+                    message: "Coupon code already exists"
+                });return
+            }
+        }
+        
+        // Update the coupon with only the provided fields
+        const updatedCoupon = await Coupon.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true, runValidators: true }
+        );
+        
+         res.status(200).json({
+            success: true,
+            message: "Coupon updated successfully",
+            coupon: updatedCoupon
+        });return
+    } catch (error:any) {
+        console.error("Error updating coupon:", error);
+         res.status(500).json({
+            success: false,
+            message: "Something went wrong while updating coupon",
+            error: error.message
+        });return
+    }
+};
+
+export const changeCouponStatus = async(req: Request, res: Response): Promise<void> => {
+    try {
+        const id = req.query.id;
+        const { isActive } = req.body;
+        
+        // Validate inputs
+        if (!id) {
+             res.status(400).json({
+                success: false,
+                message: "Coupon ID is required"
+            });return
+        }
+        
+        if (isActive === undefined) {
+             res.status(400).json({
+                success: false,
+                message: "Active status is required"
+            });return
+        }
+        
+        // Find and update coupon status
+        const coupon = await Coupon.findById(id);
+        
+        if (!coupon) {
+             res.status(404).json({
+                success: false,
+                message: "Coupon not found"
+            });return
+        }
+        
+        // Update the status
+        coupon.isActive = isActive;
+        await coupon.save();
+        
+         res.status(200).json({
+            success: true,
+            message: `Coupon ${isActive ? 'activated' : 'deactivated'} successfully`,
+            coupon
+        });return
+    } catch (error:any ) {
+        console.error("Error changing coupon status:", error);
+         res.status(500).json({
+            success: false,
+            message: "Something went wrong while changing coupon status",
+            error: error.message
+        });return
     }
 };

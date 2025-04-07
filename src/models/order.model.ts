@@ -68,6 +68,12 @@ const orderSchema = new mongoose.Schema<IOrder>({
         type:String, 
         required: true,
     },
+    appliedCoupon: {
+        couponId: { type: Schema.Types.ObjectId, ref: "Coupon" },
+        code: { type: String, required: true },
+        discountAmount: { type: Number, required: true },
+        
+    },
     paymentStatus : {
         type : String,
         enum: PaymentStatus,

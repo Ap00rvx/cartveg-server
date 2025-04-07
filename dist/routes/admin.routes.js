@@ -28,4 +28,8 @@ router.get("/search", admin_middleware_1.adminMiddleware, admin_controller_1.sea
 router.get("/users", admin_middleware_1.adminMiddleware, admin_controller_1.getAllUsers);
 router.get("/orders", admin_middleware_1.adminMiddleware, admin_controller_1.getAllOrders);
 router.delete("/user/delete", admin_middleware_1.adminMiddleware, admin_controller_1.deleteUser);
+router.post("/coupon/create", admin_middleware_1.adminMiddleware, admin_controller_1.createCouponCode);
+router.get("/coupon", admin_middleware_1.adminMiddleware, admin_controller_1.getAllCoupons);
+router.put("/coupon/update", admin_middleware_1.adminMiddleware, admin_controller_1.updateCouponDetails);
+router.put("/coupon/status", admin_middleware_1.adminMiddleware, admin_controller_1.changeCouponStatus);
 exports.default = router;

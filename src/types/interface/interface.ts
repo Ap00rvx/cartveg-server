@@ -68,8 +68,7 @@ export interface IOrder {
     orderId: string;  
     userId: mongoose.Types.ObjectId; 
     products: {
-        productId: mongoose.Types.ObjectId;
-        
+        productId: mongoose.Types.ObjectId; 
         quantity: number;
     }[]; 
     orderDate: Date;
@@ -80,6 +79,11 @@ export interface IOrder {
     isCashOnDelivery: boolean;
     deliveryAddress: IAddress;
     invoiceId: string;
+    appliedCoupon?: {
+        couponId: mongoose.Types.ObjectId;
+        code: string;
+        discountAmount: number;
+    };
     paymentStatus: PaymentStatus; 
     shippingAmount :number; 
     rzpPaymentId?: string;
@@ -90,7 +94,7 @@ export interface ICoupon {
     expiry :Date; 
     maxUsage: number; 
     couponCode : string;
-    offValue : String | number;
+    offValue :  number;
     isActive: boolean;
     isDeleted: boolean;
     usedUsers : string[]; 

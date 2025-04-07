@@ -26,6 +26,7 @@ const common_routes_1 = __importDefault(require("./routes/common.routes"));
 const order_routes_1 = __importDefault(require("./routes/order.routes"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const cart_routes_1 = __importDefault(require("./routes/cart.routes"));
+const coupon_routes_1 = __importDefault(require("./routes/coupon.routes"));
 const serviceAccount = require(__dirname + "/service_account.json");
 firebase_admin_1.default.initializeApp({
     credential: firebase_admin_1.default.credential.cert(serviceAccount),
@@ -47,6 +48,7 @@ app.use('/admin', admin_routes_1.default);
 app.use('/common', common_routes_1.default);
 app.use('/order', order_routes_1.default);
 app.use('/cart', cart_routes_1.default);
+app.use('/coupon', coupon_routes_1.default);
 (() => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield (0, database_1.default)();

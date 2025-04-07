@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateOrderStatus = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.exportProductCSV = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
+exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.updateOrderStatus = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.exportProductCSV = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -25,6 +25,7 @@ const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const interface_2 = require("../types/interface/interface");
 const json2csv_1 = require("json2csv");
 const mongoose_1 = __importDefault(require("mongoose"));
+const coupon_model_1 = __importDefault(require("../models/coupon.model"));
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const products = req.body;
@@ -939,3 +940,182 @@ const handleOrderCancellation = (orderId, res) => __awaiter(void 0, void 0, void
         res.status(500).json(internalServerErrorResponse);
     }
 });
+const createCouponCode = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { code, expiry, minValue, maxUsage, offValue } = req.body;
+        // Validate required fields
+        if (!code || !expiry || !minValue || !maxUsage || !offValue) {
+            res.status(400).json({
+                success: false,
+                message: "All fields are required: code, expiry, minValue, maxUsage, offValue"
+            });
+            return;
+        }
+        // Check if coupon code already exists
+        const existingCoupon = yield coupon_model_1.default.findOne({ code });
+        if (existingCoupon) {
+            res.status(400).json({
+                success: false,
+                message: "Coupon code already exists"
+            });
+            return;
+        }
+        // Create new coupon
+        const coupon = yield coupon_model_1.default.create({
+            couponCode: code,
+            expiry: new Date(expiry),
+            minValue,
+            maxUsage,
+            offValue
+        });
+        res.status(201).json({
+            success: true,
+            message: "Coupon created successfully",
+            coupon
+        });
+        return;
+    }
+    catch (error) {
+        console.error("Error creating coupon:", error);
+        res.status(500).json({
+            success: false,
+            message: "Something went wrong while creating coupon",
+            error: error.message
+        });
+        return;
+    }
+});
+exports.createCouponCode = createCouponCode;
+const getAllCoupons = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const coupons = yield coupon_model_1.default.find({}).lean();
+        if (!coupons || coupons.length === 0) {
+            res.status(404).json({
+                success: false,
+                message: "No coupons found"
+            });
+            return;
+        }
+        res.status(200).json({
+            success: true,
+            message: "Coupons fetched successfully",
+            coupons
+        });
+        return;
+    }
+    catch (error) {
+        console.error("Error fetching coupons:", error);
+        res.status(500).json({
+            success: false,
+            message: "Something went wrong while fetching coupons",
+            error: error.message
+        });
+        return;
+    }
+});
+exports.getAllCoupons = getAllCoupons;
+const updateCouponDetails = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.query;
+        const { code, expiry, minValue, maxUsage, offValue } = req.body;
+        // Check if coupon exists
+        const coupon = yield coupon_model_1.default.findById(id);
+        if (!coupon) {
+            res.status(404).json({
+                success: false,
+                message: "Coupon not found"
+            });
+            return;
+        }
+        // Create update object with only provided fields
+        const updateData = {};
+        if (code !== undefined)
+            updateData.couponCode = code;
+        if (expiry !== undefined)
+            updateData.expiry = new Date(expiry);
+        if (minValue !== undefined)
+            updateData.minValue = minValue;
+        if (maxUsage !== undefined)
+            updateData.maxUsage = maxUsage;
+        if (offValue !== undefined)
+            updateData.offValue = offValue;
+        // If code is being updated, check if new code already exists
+        if (code && code !== coupon.couponCode) {
+            const existingCoupon = yield coupon_model_1.default.findOne({ code });
+            if (existingCoupon) {
+                res.status(400).json({
+                    success: false,
+                    message: "Coupon code already exists"
+                });
+                return;
+            }
+        }
+        // Update the coupon with only the provided fields
+        const updatedCoupon = yield coupon_model_1.default.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
+        res.status(200).json({
+            success: true,
+            message: "Coupon updated successfully",
+            coupon: updatedCoupon
+        });
+        return;
+    }
+    catch (error) {
+        console.error("Error updating coupon:", error);
+        res.status(500).json({
+            success: false,
+            message: "Something went wrong while updating coupon",
+            error: error.message
+        });
+        return;
+    }
+});
+exports.updateCouponDetails = updateCouponDetails;
+const changeCouponStatus = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const id = req.query.id;
+        const { isActive } = req.body;
+        // Validate inputs
+        if (!id) {
+            res.status(400).json({
+                success: false,
+                message: "Coupon ID is required"
+            });
+            return;
+        }
+        if (isActive === undefined) {
+            res.status(400).json({
+                success: false,
+                message: "Active status is required"
+            });
+            return;
+        }
+        // Find and update coupon status
+        const coupon = yield coupon_model_1.default.findById(id);
+        if (!coupon) {
+            res.status(404).json({
+                success: false,
+                message: "Coupon not found"
+            });
+            return;
+        }
+        // Update the status
+        coupon.isActive = isActive;
+        yield coupon.save();
+        res.status(200).json({
+            success: true,
+            message: `Coupon ${isActive ? 'activated' : 'deactivated'} successfully`,
+            coupon
+        });
+        return;
+    }
+    catch (error) {
+        console.error("Error changing coupon status:", error);
+        res.status(500).json({
+            success: false,
+            message: "Something went wrong while changing coupon status",
+            error: error.message
+        });
+        return;
+    }
+});
+exports.changeCouponStatus = changeCouponStatus;

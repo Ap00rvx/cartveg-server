@@ -17,7 +17,26 @@ const couponSchema = new mongoose.Schema<ICoupon>({
     couponCode :{
         type: String,
         required :true,
+        unique : true,
     },
-    
+    offValue : {
+        type:Number,
+        required:true,
+    },
+    isActive: {
+        type: Boolean,
+        default: true,
+    },
+    isDeleted: {
+        type: Boolean,
+        default: false,
+    },
+    usedUsers : {
+        type: [String],
+        default: [],
 
+    }
 });
+
+const Coupon = mongoose.model<ICoupon>("Coupon", couponSchema);
+export default Coupon;

@@ -102,6 +102,11 @@ const orderSchema = new mongoose_1.default.Schema({
         type: String,
         required: true,
     },
+    appliedCoupon: {
+        couponId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Coupon" },
+        code: { type: String, required: true },
+        discountAmount: { type: Number, required: true },
+    },
     paymentStatus: {
         type: String,
         enum: interface_1.PaymentStatus,

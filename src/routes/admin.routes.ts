@@ -1,4 +1,4 @@
-import { updateProductAvailability,updateProductThreshold,sendNotification,getAllOrders,updateProductDetails,uploadCSV,updateUserDetails,updateProductStock,createAdminUser,adminLogin,createMultipleProducts,deleteMultipleProducts,getProductById,exportProductCSV,getAllProducts,searchProducts,getAllUsers,deleteUser,createUser,updateOrderStatus} from "../controller/admin.controller";
+import { updateProductAvailability,updateProductThreshold,sendNotification,getAllOrders,updateProductDetails,uploadCSV,updateUserDetails,updateProductStock,createAdminUser,adminLogin,createMultipleProducts,deleteMultipleProducts,getProductById,exportProductCSV,getAllProducts,searchProducts,getAllUsers,deleteUser, createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser,updateOrderStatus} from "../controller/admin.controller";
 import { Router } from "express";
 import { adminMiddleware } from "../middleware/admin.middleware";
 import uploadBuffer from "../config/csv-buffer";
@@ -30,5 +30,9 @@ router.get("/orders", adminMiddleware,getAllOrders);
 router.delete("/user/delete",adminMiddleware,deleteUser);
 
 
+router.post("/coupon/create", adminMiddleware,createCouponCode);
+router.get("/coupon", adminMiddleware,getAllCoupons);
+router.put("/coupon/update", adminMiddleware,updateCouponDetails);
+router.put("/coupon/status", adminMiddleware,changeCouponStatus);
 
 export default router;
