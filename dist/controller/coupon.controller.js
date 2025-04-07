@@ -41,7 +41,7 @@ const applyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             return;
         }
         // Find the coupon
-        const coupon = yield coupon_model_1.default.findOne({ code: couponCode });
+        const coupon = yield coupon_model_1.default.findOne({ couponCode });
         // Check if coupon exists
         if (!coupon) {
             res.status(404).json({
@@ -135,7 +135,7 @@ const removeCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             return;
         }
         // Find the coupon
-        const coupon = yield coupon_model_1.default.findOne({ code: couponCode });
+        const coupon = yield coupon_model_1.default.findOne({ couponCode });
         // Check if coupon exists
         if (!coupon) {
             res.status(404).json({

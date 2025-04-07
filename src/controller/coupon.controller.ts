@@ -28,7 +28,7 @@ export const applyCoupon = async (req: Request, res: Response): Promise<void> =>
         }
         
         // Find the coupon
-        const coupon = await Coupon.findOne({ code: couponCode });
+        const coupon = await Coupon.findOne({ couponCode });
         
         // Check if coupon exists
         if (!coupon) {
@@ -127,7 +127,7 @@ export const removeCoupon = async (req: Request, res: Response): Promise<void> =
         }
         
         // Find the coupon
-        const coupon = await Coupon.findOne({ code: couponCode });
+        const coupon = await Coupon.findOne({ couponCode });
         
         // Check if coupon exists
         if (!coupon) {
