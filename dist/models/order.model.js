@@ -57,26 +57,26 @@ const orderSchema = new mongoose_1.default.Schema({
     orderDate: {
         type: Date,
         required: true,
-        default: Date.now()
+        default: Date.now(),
     },
     expectedDeliveryDate: {
         type: Date,
         required: true,
         default: function () {
             return new Date(this.orderDate.getTime() + 2 * 24 * 60 * 60 * 1000);
-        }
+        },
     },
     totalAmount: {
         type: Number,
         required: true,
-        min: 0
+        min: 0,
     },
     shippingAmount: {
         type: Number,
         required: true,
         min: 0,
         default: 0,
-        select: true
+        select: true,
     },
     totalItems: {
         type: Number,
@@ -88,7 +88,7 @@ const orderSchema = new mongoose_1.default.Schema({
         type: String,
         enum: interface_1.OrderStatus,
         required: true,
-        default: interface_1.OrderStatus.Placed
+        default: interface_1.OrderStatus.Placed,
     },
     isCashOnDelivery: {
         type: Boolean,
@@ -103,28 +103,28 @@ const orderSchema = new mongoose_1.default.Schema({
         required: true,
     },
     appliedCoupon: {
-        couponId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Coupon" },
-        code: { type: String, required: true },
-        discountAmount: { type: Number, required: true },
+        couponId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Coupon" }, // Optional
+        code: { type: String }, // Optional
+        discountAmount: { type: Number }, // Optional
     },
     paymentStatus: {
         type: String,
         enum: interface_1.PaymentStatus,
         default: interface_1.PaymentStatus.Pending,
-        required: true
+        required: true,
     },
     rzpOrderId: {
         type: String,
         required: function () {
             return this.isCashOnDelivery === false;
-        }
+        },
     },
     rzpPaymentId: {
         type: String,
         required: function () {
             return this.isCashOnDelivery === false;
-        }
-    }
+        },
+    },
 });
 const Order = mongoose_1.default.model("Order", orderSchema);
 exports.default = Order;

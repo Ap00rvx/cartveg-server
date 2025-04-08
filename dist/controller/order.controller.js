@@ -21,7 +21,8 @@ const user_model_1 = __importDefault(require("../models/user.model"));
 const invoice_model_1 = __importDefault(require("../models/invoice.model"));
 const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { userId, products, isCashOnDelivery, deliveryAddress, phone, shippingAmount } = req.body;
+        const { userId, products, isCashOnDelivery, deliveryAddress, phone, shippingAmount, appliedCoupon, // Optional field
+         } = req.body;
         // Validate required fields
         if (!userId || !products || !deliveryAddress || !phone || !shippingAmount) {
             const errorResponse = {
@@ -46,10 +47,11 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         // Start a transaction session
         const session = yield mongoose_1.default.startSession();
         session.startTransaction();
-        var totalAmount = 0;
-        var totalItems = 0;
+        let totalAmount = 0;
+        let totalItems = 0;
+        let discountAmount = 0;
         try {
-            // Update product stock
+            // Update product stock and calculate subtotal
             for (const item of products) {
                 const product = yield product_model_1.default.findById(item.productId).session(session);
                 if (!product)
@@ -66,8 +68,21 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 }
                 yield product.save({ session });
             }
+            // Handle appliedCoupon if provided
+            if (appliedCoupon) {
+                const { couponId, code, discountAmount: appliedDiscount } = appliedCoupon;
+                if (!couponId || !code || appliedDiscount === undefined) {
+                    throw new Error("Invalid coupon data: couponId, code, and discountAmount are required if appliedCoupon is provided");
+                }
+                // Here you might want to validate the coupon (e.g., check if it exists and is valid)
+                // For simplicity, assuming it's valid if provided
+                discountAmount = appliedDiscount;
+                totalAmount -= discountAmount; // Apply discount to total
+                if (totalAmount < 0)
+                    totalAmount = 0; // Ensure total doesn't go negative
+            }
             const invoiceId = `INV-${orderId}`;
-            totalAmount += shippingAmount;
+            totalAmount += shippingAmount; // Add shipping after discount
             // Create new order
             const orderDate = new Date();
             const newOrder = new order_model_1.default({
@@ -82,10 +97,15 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 status: interface_1.OrderStatus.Placed,
                 isCashOnDelivery,
                 deliveryAddress,
-                invoiceId: invoiceId, // Example invoice ID
+                invoiceId: invoiceId,
                 paymentStatus: isCashOnDelivery ? interface_1.PaymentStatus.Pending : interface_1.PaymentStatus.Paid,
                 rzpOrderId: isCashOnDelivery ? undefined : "",
                 rzpPaymentId: isCashOnDelivery ? undefined : "",
+                appliedCoupon: appliedCoupon ? {
+                    couponId: appliedCoupon.couponId,
+                    code: appliedCoupon.code,
+                    discountAmount: discountAmount,
+                } : undefined, // Include appliedCoupon only if provided
             });
             yield newOrder.save({ session });
             // Update user order history
@@ -95,7 +115,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             user.orders = user.orders || [];
             user.orders.push(newOrder.orderId);
             yield user.save({ session });
-            // Commit transaction
+            // Create invoice
             const invoiceData = {
                 invoiceId,
                 orderId,
@@ -106,7 +126,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 },
                 totalAmount: totalAmount,
                 paymentStatus: isCashOnDelivery ? interface_1.PaymentStatus.Pending : interface_1.PaymentStatus.Paid,
-                billingAddress: deliveryAddress, // Assuming deliveryAddress as billing
+                billingAddress: deliveryAddress,
                 shippingAddress: deliveryAddress,
                 orderDate,
                 items: yield Promise.all(products.map((product) => __awaiter(void 0, void 0, void 0, function* () {
@@ -118,10 +138,11 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                     };
                 }))),
                 paymentMode: isCashOnDelivery ? "Cash on Delivery" : "Online Payment",
+                discountAmount: discountAmount > 0 ? discountAmount : undefined, // Include discount in invoice if applied
             };
-            // Create invoice
             const newInvoice = new invoice_model_1.default(invoiceData);
             yield newInvoice.save({ session });
+            // Commit transaction
             yield session.commitTransaction();
             session.endSession();
             const successResponse = {
@@ -143,7 +164,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         res.status(500).json({
             message: error.message,
             statusCode: 500,
-            res: `Creation of order failed due to ${error.message}`
+            res: `Creation of order failed due to ${error.message}`,
         });
     }
 });
