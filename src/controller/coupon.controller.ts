@@ -85,6 +85,7 @@ export const applyCoupon = async (req: Request, res: Response): Promise<void> =>
         
         // Record coupon usage (will be committed during transaction)
         coupon.usedUsers.push(userId);
+        await coupon.save({ session });
         // Commit the transaction
         await session.commitTransaction();
         session.endSession();

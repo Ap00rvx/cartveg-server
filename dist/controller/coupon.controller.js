@@ -95,6 +95,7 @@ const applyCoupon = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         const finalAmount = cartTotal - discount;
         // Record coupon usage (will be committed during transaction)
         coupon.usedUsers.push(userId);
+        yield coupon.save({ session });
         // Commit the transaction
         yield session.commitTransaction();
         session.endSession();
