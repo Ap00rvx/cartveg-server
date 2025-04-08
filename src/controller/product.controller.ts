@@ -204,7 +204,7 @@ export const getAvailableProductIds = async(req:Request,res:Response):Promise<vo
 export const getSearchProductList = async (req: Request, res: Response): Promise<void> => {
     try{
         // return only id,name and image
-        const products = await Product.find().select("id name image");
+        const products = await Product.find();
 
         const successResponse: SuccessResponse = {
             statusCode: 200,

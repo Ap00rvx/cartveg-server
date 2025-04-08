@@ -192,7 +192,7 @@ exports.getAvailableProductIds = getAvailableProductIds;
 const getSearchProductList = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         // return only id,name and image
-        const products = yield product_model_1.default.find().select("id name image");
+        const products = yield product_model_1.default.find();
         const successResponse = {
             statusCode: 200,
             message: "Products retrieved successfully",
