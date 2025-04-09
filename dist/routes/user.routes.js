@@ -9,4 +9,5 @@ router.post("/verify-otp", user_controller_1.verifyOtp);
 router.post("/save", user_middleware_1.authenticateUser, user_controller_1.saveUserDetails);
 router.get("/", user_middleware_1.authenticateUser, user_controller_1.getUserDetails);
 router.post("/save-fcm-token", user_middleware_1.authenticateUser, user_controller_1.saveFCMToken);
+router.post("/resend-otp", user_controller_1.resendOtp);
 exports.default = router;

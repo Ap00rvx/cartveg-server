@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.saveUserDetails = exports.getUserDetails = exports.saveFCMToken = exports.verifyOtp = exports.authenticate = void 0;
+exports.saveUserDetails = exports.getUserDetails = exports.saveFCMToken = exports.verifyOtp = exports.resendOtp = exports.authenticate = void 0;
 const user_model_1 = __importDefault(require("../models/user.model"));
 const otp_model_1 = __importDefault(require("../models/otp.model"));
 const nodemailer_1 = __importDefault(require("../config/nodemailer"));
@@ -50,6 +50,31 @@ const authenticate = (req, res) => __awaiter(void 0, void 0, void 0, function* (
     }
 });
 exports.authenticate = authenticate;
+const resendOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const email = req.body["user_email"];
+    if (!email) {
+        res.status(400).json({ msg: "Email is required" });
+        return;
+    }
+    try {
+        const otp = crypto_1.default.randomInt(100000, 999999).toString();
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // OTP valid for 10 minutes
+        yield otp_model_1.default.deleteMany({ email }); // Remove previous OTPs
+        yield otp_model_1.default.create({ email, otp, otpExpiry });
+        yield (0, nodemailer_1.default)(email, otp);
+        res.status(200).json({ msg: "OTP resent successfully", email });
+    }
+    catch (err) {
+        console.error("Error resending OTP:", err);
+        const response = {
+            message: err.message,
+            statusCode: 500,
+            stack: err.stack,
+        };
+        res.status(500).json(response);
+    }
+});
+exports.resendOtp = resendOtp;
 const verifyOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { email, otp } = req.body;
     if (!email || !otp) {

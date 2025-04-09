@@ -45,6 +45,35 @@ export const authenticate = async (req: Request, res: Response): Promise<void> =
         res.status(500).json(response);
     }
 };
+export const resendOtp = async (req: Request, res: Response): Promise<void> => {
+    const email = req.body["user_email"];
+    if (!email) {
+        res.status(400).json({ msg: "Email is required" });
+        return;
+    }
+
+    try {
+        const otp = crypto.randomInt(100000, 999999).toString();
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // OTP valid for 10 minutes
+
+        await Otp.deleteMany({ email }); // Remove previous OTPs
+        await Otp.create({ email, otp, otpExpiry });
+
+        await sendMail(email, otp);
+        res.status(200).json({ msg: "OTP resent successfully",email  });
+    } catch 
+    (err: any) {
+        console.error("Error resending OTP:", err);
+        const response: InterServerError = {
+            message: err.message,
+            statusCode: 500,
+            stack: err.stack,
+        };
+        res.status(500).json(response);
+    }   
+}
+
+
 
 export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     const { email, otp } = req.body;
