@@ -19,6 +19,7 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const invoice_model_1 = __importDefault(require("../models/invoice.model"));
+const coupon_model_1 = __importDefault(require("../models/coupon.model"));
 const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { userId, products, isCashOnDelivery, deliveryAddress, phone, shippingAmount, appliedCoupon, // Optional field
@@ -50,6 +51,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         let totalAmount = 0;
         let totalItems = 0;
         let discountAmount = 0;
+        let coupon = null;
         try {
             // Update product stock and calculate subtotal
             for (const item of products) {
@@ -76,6 +78,13 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 }
                 // Here you might want to validate the coupon (e.g., check if it exists and is valid)
                 // For simplicity, assuming it's valid if provided
+                coupon = yield coupon_model_1.default.findOne({
+                    couponCode: code,
+                    id: couponId,
+                }).session(session);
+                if (!coupon) {
+                    throw new Error(`Coupon not found: ${code}`);
+                }
                 discountAmount = appliedDiscount;
                 totalAmount -= discountAmount; // Apply discount to total
                 if (totalAmount < 0)
@@ -156,6 +165,16 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         catch (error) {
             yield session.abortTransaction();
             session.endSession();
+            // If a coupon was applied, remove the user from the coupon's usedUsers array
+            if (appliedCoupon && coupon) {
+                try {
+                    yield coupon_model_1.default.updateOne({ _id: appliedCoupon.couponId }, { $pull: { usedUsers: userId } });
+                    console.log(`Removed user ${userId} from coupon ${appliedCoupon.code} usedUsers list due to order failure`);
+                }
+                catch (couponError) {
+                    console.error("Error removing user from coupon usedUsers:", couponError);
+                }
+            }
             throw error;
         }
     }
@@ -164,7 +183,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         res.status(500).json({
             message: error.message,
             statusCode: 500,
-            res: `Creation of order failed due to ${error.message}`,
+            res: `Creation of order failed due to ${error.message} && Removed user from coupon  usedUsers list due to order failure`,
         });
     }
 });
