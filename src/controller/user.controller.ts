@@ -8,7 +8,6 @@ import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 
 
-
 dotenv.config();
 
 export const authenticate = async (req: Request, res: Response): Promise<void> => {
@@ -72,9 +71,6 @@ export const resendOtp = async (req: Request, res: Response): Promise<void> => {
         res.status(500).json(response);
     }   
 }
-
-
-
 export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     const { email, otp } = req.body;
     if (!email || !otp) {
@@ -168,7 +164,6 @@ export const saveFCMToken = async(req:Request,res:Response) => {
     }
     res.status(200).json(  successResponse);
 }
-
 export const getUserDetails = async(req:Request,res:Response)=> {
 
 try {
@@ -193,7 +188,6 @@ try {
     res.status(500).json(response);
 }
 }
-
 export const saveUserDetails = async (req: Request, res: Response): Promise<void> => {
     const { email, name, phone } = req.body;
     if (!email || !name || !phone) {
@@ -231,4 +225,4 @@ export const saveUserDetails = async (req: Request, res: Response): Promise<void
         };
         res.status(500).json(response);
 
-    }}
+}}

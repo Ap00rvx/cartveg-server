@@ -99,4 +99,3 @@ export interface ICoupon {
     isDeleted: boolean;
     usedUsers : string[]; 
 }
-
