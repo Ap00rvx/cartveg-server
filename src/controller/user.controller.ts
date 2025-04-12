@@ -226,3 +226,5 @@ export const saveUserDetails = async (req: Request, res: Response): Promise<void
         res.status(500).json(response);
 
 }}
+
+export const addAddress = async (req: Request, res: Response): Promise<void> => {}
