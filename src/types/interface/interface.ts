@@ -57,6 +57,8 @@ export interface IProduct {
     unit:string;
     origin : string;
     shelfLife: string;
+    price: number;
+    actualPrice?: number;
     
 }
 export interface IAdmin {

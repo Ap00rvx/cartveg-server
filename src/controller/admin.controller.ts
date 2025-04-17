@@ -33,9 +33,9 @@ export const createMultipleProducts = async (req: Request, res: Response): Promi
 
         // Validate each product before insertion
         for (const product of products) {
-            const { name, description, price, category, stock, origin, shelfLife,actualPrice, threshold } = product;
+            const { name, description, price, category, origin, shelfLife,actualPrice } = product;
 
-            if (!name || !description || !price || !category || !stock || !origin || !shelfLife || !actualPrice || !threshold) {
+            if (!name || !description || !price || !category  || !origin || !shelfLife || !actualPrice ) {
                 res.status(400).json({
                     statusCode: 400,
                     message: "All product fields are required.",
@@ -43,20 +43,14 @@ export const createMultipleProducts = async (req: Request, res: Response): Promi
                 return;
             }
 
-            if (price < 0 || stock < 0) {
+            if (price < 0 ) {
                 res.status(400).json({
                     statusCode: 400,
-                    message: "Price and stock must be non-negative values.",
+                    message: "Price  must be non-negative values.",
                 });
                 return;
             }
 
-            if(stock < threshold){
-                product.isAvailable = false;
-            }
-            else{
-                product.isAvailable = true; 
-            }
         }
 
         // Insert products into database
@@ -963,14 +957,14 @@ export const adminLogin =  async (req: Request, res: Response): Promise<void> =>
             return;
         }
 
-        // Check if admin is activated
-        if (!admin.isActivate) {
-            res.status(403).json({
-                success: false,
-                message: "Admin account is not activated",
-            });
-            return;
-        }
+        // // Check if admin is activated
+        // if (!admin.isActivate && !admin.isSuperAdmin) {
+        //     res.status(403).json({
+        //         success: false,
+        //         message: "Admin account is not activated",
+        //     });
+        //     return;
+        // }
 
         // Verify password
         const isPasswordValid = await bcrypt.compare(password, admin.password);
@@ -1006,6 +1000,172 @@ export const adminLogin =  async (req: Request, res: Response): Promise<void> =>
             success: false,
             message: "Internal server error",
             stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        });
+    }
+}
+
+export const assignStoreManager = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { adminId, storeId } = req.body;
+
+        // Validate required fields
+        if (!adminId || !storeId) {
+            res.status(400).json({
+                success: false,
+                message: "Admin ID and Store ID are required",
+            });
+            return;
+        }
+
+        // Check if admin exists
+        const admin = await Admin.findById(adminId);
+        if (!admin) {
+            res.status(404).json({
+                success: false,
+                message: "Admin not found",
+            });
+            return;
+        }
+
+        // Check if store exists
+        const store = await Store.findById(storeId);
+        if (!store) {
+            res.status(404).json({
+                success: false,
+                message: "Store not found",
+            });
+            return;
+        }
+
+        // Assign store to admin
+        admin.storeId = store._id;
+        await admin.save();
+
+         res.status(200).json({
+            success: true,
+            message: "Store assigned to admin successfully",
+            data: admin,
+        });return
+    } catch (error:any) {
+         res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        });return
+    }
+}
+
+export const getAllStores = async (req: Request, res: Response): Promise<void> => {
+    try {
+      // Get pagination parameters from query
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+  
+      // Validate pagination parameters
+      if (page < 1 || limit < 1) {
+        res.status(400).json({
+          success: false,
+          message: "Page and limit must be positive integers",
+        });
+        return;
+      }
+  
+      // Calculate skip for pagination
+      const skip = (page - 1) * limit;
+  
+      // Fetch stores with pagination
+      const stores = await Store.find()
+        .select("name address phone email longitude latitude radius openingTime")
+        .skip(skip)
+        .limit(limit)
+        .lean();
+  
+      // Get total store count for pagination metadata
+      const totalStores = await Store.countDocuments();
+  
+      // Fetch store managers for all stores
+      const storeIds = stores.map((store) => store._id);
+      const admins = await Admin.find({
+        role: AdminRole.StoreManager,
+        storeId: { $in: storeIds },
+      })
+        .select("name email isActivate storeId")
+        .lean();
+  
+      // Map admins to stores
+      const formattedStores = stores.map((store) => {
+        const manager = admins.find(
+          (admin) => admin.storeId && admin.storeId.toString() === store._id.toString()
+        );
+        return {
+          _id: store._id,
+          name: store.name,
+          address: store.address,
+          phone: store.phone,
+          email: store.email,
+          longitude: store.longitude,
+          latitude: store.latitude,
+          radius: store.radius,
+          openingTime: store.openingTime,
+          manager: manager
+            ? {
+                name: manager.name,
+                email: manager.email,
+               
+              }
+            : null, // No manager found
+        };
+      });
+  
+      // Return paginated response
+      res.status(200).json({
+        success: true,
+        message: "Stores retrieved successfully",
+        data: {
+          stores: formattedStores,
+          pagination: {
+            currentPage: page,
+            limit,
+            totalStores,
+            totalPages: Math.ceil(totalStores / limit),
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error("Error retrieving stores:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error while retrieving stores",
+        error: error.message,
+      });
+    }
+  };
+
+export const updateStoreDetails= async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { storeId, data }: { storeId: string; data: Partial<IStore> } = req.body;
+
+        if (!storeId) {
+            res.status(400).json({ message: "Store ID is required" });
+            return;
+        }
+
+        const updatedStore = await Store.findByIdAndUpdate(
+            storeId,
+            data,
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedStore) {
+            res.status(404).json({ message: "Store not found" });
+            return;
+        }
+
+        res.status(200).json({ message: "Store updated successfully", data: updatedStore });
+    } catch (err: any) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
         });
     }
 }

@@ -1,232 +1,297 @@
-import Product from "../models/product.model";
 import { Request, Response } from "express";
-import { ErrorResponse, InterServerError, SuccessResponse } from "../types/types/types";
-import { SortOrder } from "mongoose";
-import NodeCache from "node-cache";
-const createProduct = async (req: Request, res: Response): Promise<void> => {
-    try {
-        // Destructure request body
-        const { name, description, price, category, stock, image, origin, shelfLife } = req.body;
+import mongoose from "mongoose";
+import { Store } from "../models/store.model"; // Adjust path to your Store model
+import { Inventory } from "../models/inventory.model"; // Adjust path to your Inventory model
+import Product from "../models/product.model"; // Adjust path to your Product model
 
-        // Input Validation
-        if (!name || !description || !price || !category || !stock || !origin || !shelfLife) {
-            res.status(400).json({
-                statusCode: 400,
-                message: "All fields are required.",
-            });
-            return;
-        }
-
-        if (price < 0 || stock < 0) {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Price and stock must be non-negative values.",
-            });
-            return;
-        }
-
-        // Create product instance
-        const product = new Product({
-            name,
-            description,
-            price,
-            category,
-            stock,
-            image: image || undefined, // Defaults to schema default if not provided
-            origin,
-            shelfLife,
-        });
-
-        // Save product to database
-        await product.save();
-
-        // Success Response
-        const successResponse: SuccessResponse = {
-            statusCode: 201,
-            message: "Product added successfully",
-            data: product,
-        };
-
-        res.status(201).json(successResponse);
-    } catch (error: any) {
-        console.error("Error creating product:", error);
-
-        // Handle Mongoose Validation Errors
-        if (error.name === "ValidationError") {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Validation error",
-                errors: error.errors,
-            });
-            return;
-        }
-
-        // Handle Duplicate Key Errors (e.g., unique name constraint)
-        if (error.code === 11000) {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Duplicate entry detected",
-                details: error.keyValue,
-            });
-            return;
-        }
-
-        // General Internal Server Error
-        const internalServerErrorResponse: InterServerError = {
-            statusCode: 500,
-            message: "Internal server error",
-            
-            stack : process.env.NODE_ENV === "development" ? error.stack : undefined, // Hide stack in production
-        };
-
-        res.status(500).json(internalServerErrorResponse);
-    }
+// Haversine formula to calculate distance between two points (in kilometers)
+const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 };
 
-const getProducts = async (req: Request, res: Response): Promise<void> => {
-    try {
-        let { page = "1", limit = "10", sort = "createdAt", order = "desc", category } = req.query;
+// Interface for populated product in inventory
+interface PopulatedProduct {
+  productId: mongoose.Types.ObjectId & {
+    name: string;
+    description: string;
+    unit: string;
+    price: number;
+    actualPrice?: number;
+    category: string;
+    origin: string;
+    shelfLife: string;
+    image: string;
+  };
+  quantity: number;
+  threshold: number;
+  availability: boolean;
+}
 
-        // Convert query params to numbers where needed
-        const pageNumber = Math.max(1, parseInt(page as string, 10));
-        const limitNumber = Math.max(1, parseInt(limit as string, 10));
-        const skip = (pageNumber - 1) * limitNumber;
+// Controller to search products by user location using latitude and longitude
+export const getProductsByLocation = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get query parameters
+    const latitude = parseFloat(req.query.latitude as string);
+    const longitude = parseFloat(req.query.longitude as string);
+    const category = req.query.category as string | undefined;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
 
-        // Sorting configuration
-        const sortOrder: SortOrder = order === "asc" ? 1 : -1;
-        const sortQuery: { [key: string]: SortOrder } = { [sort as string]: sortOrder };
-
-        // Filtering by category if provided
-        const filter: any = {
-            isAvailable: true, // Ensure only available products are fetched
-        };
-        if (category) {
-            // make in case-insensitive
-            filter.category = { $regex: new RegExp(category as string, "i") };
-        }
-
-        // Fetch products with pagination
-        const products = await Product.find(filter)
-            .sort(sortQuery)
-            .skip(skip)
-            .limit(limitNumber);
-
-        // Count total products for pagination metadata
-        const totalProducts = await Product.countDocuments(filter);
-        const totalPages = Math.ceil(totalProducts / limitNumber);
-
-        // Success Response
-        res.status(200).json({
-            statusCode: 200,
-            message: "Products retrieved successfully",
-            data: {
-                products, // No need to filter manually since it's already done in the query
-                pagination: {
-                    currentPage: pageNumber,
-                    totalPages,
-                    totalProducts,
-                    limit: limitNumber,
-                },
-            },
-        });
-    } catch (error: any) {
-        console.error("Error fetching products:", error);
-
-        // Internal Server Error Response
-        res.status(500).json({
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
-        });
+    // Validate latitude and longitude
+    if (isNaN(latitude) || isNaN(longitude)) {
+      res.status(400).json({
+        success: false,
+        message: "Valid latitude and longitude are required",
+      });
+      return;
     }
+
+    // Validate pagination
+    if (page < 1 || limit < 1) {
+      res.status(400).json({
+        success: false,
+        message: "Page and limit must be positive integers",
+      });
+      return;
+    }
+
+    // Fetch all stores
+    const stores = await Store.find()
+      .select("name address phone email latitude longitude radius openingTime")
+      .lean();
+
+    if (!stores || stores.length === 0) {
+      res.status(404).json({
+        success: false,
+        message: "No stores found",
+      });
+      return;
+    }
+
+    // Find the nearest store within its radius
+    let nearestStore: any = null;
+    let minDistance = Infinity;
+
+    for (const store of stores) {
+      const distance = haversineDistance(latitude, longitude, store.latitude, store.longitude);
+      console.log("Distance to store:", distance, "km");
+      if (distance <= store.radius && distance < minDistance) {
+        minDistance = distance;
+        nearestStore = store;
+      }
+    }
+
+    if (!nearestStore) {
+      res.status(404).json({
+        success: false,
+        message: "No stores found within their service radius",
+      });
+      return;
+    }
+
+    // Find inventory for the nearest store
+    const inventory = await Inventory.findOne({ storeId: nearestStore._id })
+      .populate({
+        path: "products.productId",
+        select: "name description unit price actualPrice category origin shelfLife image",
+        match: category ? { category } : {}, // Filter by category if provided
+      })
+      .lean();
+
+    if (!inventory) {
+      res.status(404).json({
+        success: false,
+        message: "No inventory found for the nearest store",
+      });
+      return;
+    }
+
+    // Filter available products and paginate
+    const availableProducts = (inventory.products as PopulatedProduct[])
+      .filter((product) => product.availability && product.productId) // Only available products with valid productId
+      .map((product) => ({
+        productId: product.productId._id,
+        quantity: product.quantity,
+        threshold: product.threshold,
+        availability: product.availability,
+        details: {
+          name: product.productId.name,
+          description: product.productId.description,
+          unit: product.productId.unit,
+          price: product.productId.price,
+          actualPrice: product.productId.actualPrice,
+          category: product.productId.category,
+          origin: product.productId.origin,
+          shelfLife: product.productId.shelfLife,
+          image: product.productId.image,
+        },
+      }));
+
+      // caluclate a avg delivery time based on distance
+    const deliveryTime = Math.round(minDistance * 5); // Assuming 1 km takes 5 minutes to deliver
+    
+
+    
+    // Paginate results
+    const totalProducts = availableProducts.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedProducts = availableProducts.slice(startIndex, startIndex + limit);
+
+    // Return response
+    res.status(200).json({
+      success: true,
+      message: "Products retrieved successfully from nearest store",
+      data: {
+        store: {
+          _id: nearestStore._id,
+          name: nearestStore.name,
+          address: nearestStore.address,
+          phone: nearestStore.name,
+          email: nearestStore.email,
+          latitude: nearestStore.latitude,
+          longitude: nearestStore.longitude,
+          radius: nearestStore.radius,
+          openingTime: nearestStore.openingTime,
+        },
+        products: paginatedProducts,
+        deliveryTime: `${deliveryTime} minutes`,
+        pagination: {
+          currentPage: page,
+          limit,
+          totalProducts,
+          totalPages: Math.ceil(totalProducts / limit),
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error("Error searching products by location:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while searching products",
+      error: error.message,
+    });
+  }
 };
 
-// Initialize cache with 10 minutes expiration
-const productCache = new NodeCache({ stdTTL: 900, checkperiod: 920 });
-
-const searchProducts = async (req: Request, res: Response): Promise<void> => {
+// Controller to get  products by store ID without pagination
+export const getAllProductsWithAvailability = async (req: Request, res: Response): Promise<void> => {
     try {
-        const query = (req.query.query as string)?.trim().toLowerCase();
+      // Get query parameters
+      const latitude = parseFloat(req.query.latitude as string);
+      const longitude = parseFloat(req.query.longitude as string);
 
-        if (!query) {
-            res.status(400).json({ message: "Query parameter is required" });
-            return;
+  
+      // Validate latitude and longitude
+      if (isNaN(latitude) || isNaN(longitude)) {
+        res.status(400).json({
+          success: false,
+          message: "Valid latitude and longitude are required",
+        });
+        return;
+      }
+  
+
+      // Fetch all stores
+      const stores = await Store.find()
+        .select("name latitude longitude radius")
+        .lean();
+  
+      if (!stores || stores.length === 0) {
+        res.status(404).json({
+          success: false,
+          message: "No stores found",
+        });
+        return;
+      }
+  
+      // Find the nearest store within its radius
+      let nearestStore: any = null;
+      let minDistance = Infinity;
+  
+      for (const store of stores) {
+        const distance = haversineDistance(latitude, longitude, store.latitude, store.longitude);
+        if (distance <= store.radius && distance < minDistance) {
+          minDistance = distance;
+          nearestStore = store;
         }
-
-        // Check cache first
-        const cachedProducts = productCache.get("allProducts") as any[];
-        if (cachedProducts) {
-            console.log("Serving from cache");
-            const filteredProducts = cachedProducts.filter(product =>
-                product.name.toLowerCase().includes(query)
-            ).slice(0, 20);
-            
-            res.status(200).json({ statusCode: 200, data: filteredProducts });
-            return;
-        }
-
-        console.log("Fetching from database...");
+      }
+  
+      if (!nearestStore) {
+        res.status(404).json({
+          success: false,
+          message: "No stores found within their service radius",
+        });
+        return;
+      }
+  
+      // Fetch inventory for the nearest store
+      const inventory = await Inventory.findOne({ storeId: nearestStore._id })
+        .select("products.productId products.availability")
+        .lean();
+  
+      // Create a map of available product IDs
+      const availableProductIds = new Set(
+        inventory?.products
+          ?.filter((product) => product.availability)
+          .map((product) => product.productId.toString()) || []
+      );
+  
+      // Fetch all products with pagination
+     
+      const products = await Product.find()
+        .select("name description unit price actualPrice category origin shelfLife image")
         
-        // Fetch from DB and cache it
-        const products = await Product.find({
-            isAvailable: true,
-        });
-        productCache.set("allProducts", products);
-
-        // Filter results
-        const filteredProducts = products.filter(product =>
-            product.name.toLowerCase().includes(query)
-        ).slice(0, 20);
-
-        res.status(200).json({ statusCode: 200, data: filteredProducts });
-    } catch (err: any) {
-        res.status(500).json({
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        });
+        .lean();
+  
+      const totalProducts = await Product.countDocuments();
+  
+      // Format products with availability
+      const formattedProducts = products.map((product) => ({
+        _id: product._id,
+        name: product.name,
+        description: product.description,
+        unit: product.unit,
+        price: product.price,
+        actualPrice: product.actualPrice,
+        category: product.category,
+        origin: product.origin,
+        shelfLife: product.shelfLife,
+        image: product.image,
+        availability: availableProductIds.has(product._id.toString()),
+      }));
+  
+      // Return response
+      res.status(200).json({
+        success: true,
+        message: "Products retrieved successfully with availability",
+        data: {
+          store: {
+            _id: nearestStore._id,
+            name: nearestStore.name,
+            latitude: nearestStore.latitude,
+            longitude: nearestStore.longitude,
+            radius: nearestStore.radius,
+          },
+          products: formattedProducts,
+          
+        },
+      });
+    } catch (error: any) {
+      console.error("Error fetching products with availability:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error while fetching products",
+        error: error.message,
+      });
     }
-};
-export const getAvailableProductIds = async(req:Request,res:Response):Promise<void> =>{
-    try{
-        const products = await Product.find({isAvailable:true}).select("id"); 
-        const ids = products.map((product) => product.id); 
-        res.status(200).json(ids);
-    }catch(err:any){
-        res.status(500).json({
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        });
-    }
-}
-
-export const getSearchProductList = async (req: Request, res: Response): Promise<void> => {
-    try{
-        // return only id,name and image
-        const products = await Product.find();
-
-        const successResponse: SuccessResponse = {
-            statusCode: 200,
-            message: "Products retrieved successfully",
-            data: products,
-        }
-        res.status(200).json(successResponse);
-
-
-    }catch(err:any){
-        const internalServerError:InterServerError = {
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-
-        }
-        res.status(500).json(internalServerError);
-    }
-}
-export { createProduct, getProducts, searchProducts
-};
-
-
+  };
 
 

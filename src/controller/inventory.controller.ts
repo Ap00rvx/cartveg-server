@@ -167,7 +167,8 @@ interface PopulatedProduct {
   export const getInventoryProducts = async (req: Request, res: Response): Promise<void> => {
     try {
       // Get storeId from params
-      const { storeId } = req.params;
+      console.log(req.query); 
+      const storeId = req.query.storeId as string;
   
       // Validate storeId
       if (!storeId) {
@@ -191,7 +192,8 @@ interface PopulatedProduct {
       const inventory = await Inventory.findOne({ storeId })
         .populate({
           path: "products.productId",
-          select: "name description unit category origin shelfLife image", // Select specific fields
+          model: "Product",
+          select: "name description unit category origin shelfLife image price actualPrice",
         })
         .lean();
   
@@ -230,6 +232,8 @@ interface PopulatedProduct {
             origin: product.productId.origin,
             shelfLife: product.productId.shelfLife,
             image: product.productId.image,
+            price: product.productId.price,
+            actualPrice: product.productId.actualPrice,
           },
         };
       });
@@ -322,9 +326,19 @@ export const updateStock = async (req: Request, res: Response): Promise<void> =>
     if (threshold !== undefined) {
       inventory.products[productIndex].threshold = threshold;
     }
+    
     if (availability !== undefined) {
       inventory.products[productIndex].availability = availability;
     }
+
+    if(availability === undefined && quantity !== undefined && (quantity === 0 || quantity < inventory.products[productIndex].threshold)) {
+      inventory.products[productIndex].availability = false; // Set availability to false if quantity is 0 or below threshold
+    }
+      
+      else if (availability === undefined && quantity !== undefined && quantity > inventory.products[productIndex].threshold) {
+        inventory.products[productIndex].availability = true; // Set availability to true if quantity is above threshold
+      }
+    
 
     // Save the updated inventory
     await inventory.save();
@@ -344,135 +358,5 @@ export const updateStock = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const updateProductAvailability = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { storeId, productId, availability }: UpdateStockRequest = req.body;
-    
-        // Validate required fields
-        if (!storeId || !productId || availability === undefined) {
-        res.status(400).json({
-            success: false,
-            message: "storeId, productId, and availability are required",
-        });
-        return;
-        }
-    
-        // Validate MongoDB ObjectIds
-        if (!mongoose.Types.ObjectId.isValid(storeId) || !mongoose.Types.ObjectId.isValid(productId)) {
-        res.status(400).json({
-            success: false,
-            message: "Invalid storeId or productId format",
-        });
-        return;
-        }
-    
-        // Check if inventory exists
-        const inventory = await Inventory.findOne({ storeId });
-        if (!inventory) {
-        res.status(404).json({
-            success: false,
-            message: "Inventory not found for this store",
-        });
-        return;
-        }
-    
-        // Find product in inventory
-        const productIndex = inventory.products.findIndex(
-        (p) => p.productId.toString() === productId
-        );
-    
-        if (productIndex === -1) {
-        res.status(404).json({
-            success: false,
-            message: "Product not found in inventory",
-        });
-        return;
-        }
-    
-        // Update product availability
-        inventory.products[productIndex].availability = availability;
-    
-        // Save the updated inventory
-        await inventory.save();
-    
-        res.status(200).json({
-        success: true,
-        message: "Product availability updated successfully",
-        data: inventory,
-        });
-    } catch (error: any) {
-        console.error("Error updating product availability:", error);
-        res.status(500).json({
-        success: false,
-        message: "Server error while updating product availability",
-        error: error.message,
-        });
-    }
-}
 
-export const updateProductThreshold = async(req: Request, res: Response): Promise<void> => {
-    try {
-        const { storeId, productId, threshold }: UpdateStockRequest = req.body;
-    
-        // Validate required fields
-        if (!storeId || !productId || threshold === undefined) {
-            res.status(400).json({
-                success: false,
-                message: "storeId, productId, and threshold are required",
-            });
-            return;
-        }
-    
-        // Validate MongoDB ObjectIds
-        if (!mongoose.Types.ObjectId.isValid(storeId) || !mongoose.Types.ObjectId.isValid(productId)) {
-            res.status(400).json({
-                success: false,
-                message: "Invalid storeId or productId format",
-            });
-            return;
-        }
-    
-        // Check if inventory exists
-        const inventory = await Inventory.findOne({ storeId });
-        if (!inventory) {
-            res.status(404).json({
-                success: false,
-                message: "Inventory not found for this store",
-            });
-            return;
-        }
-    
-        // Find product in inventory
-        const productIndex = inventory.products.findIndex(
-            (p) => p.productId.toString() === productId
-        );
-    
-        if (productIndex === -1) {
-            res.status(404).json({
-                success: false,
-                message: "Product not found in inventory",
-            });
-            return;
-        }
-    
-        // Update product threshold
-        inventory.products[productIndex].threshold = threshold;
-    
-        // Save the updated inventory
-        await inventory.save();
-    
-        res.status(200).json({
-            success: true,
-            message: "Product threshold updated successfully",
-            data: inventory,
-        });
-    } catch (error: any) {
-        console.error("Error updating product threshold:", error);
-        res.status(500).json({
-            success: false,
-            message: "Server error while updating product threshold",
-            error: error.message,
-        });
-    }
-}
 

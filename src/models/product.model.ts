@@ -24,7 +24,16 @@ const productSchema = new Schema<IProduct>(
       trim: true,
       default: "450-550g"
     },
+    price:{
+      type: Number,
+      required: [true, "Price is required"],
+      min: [0, "Price must be a positive number"],
+    },
     
+    actualPrice: {
+      type: Number,
+      min: [0, "Actual price must be a positive number"],
+    },
 
     category: {
       type: String,
@@ -55,5 +64,5 @@ const productSchema = new Schema<IProduct>(
 productSchema.index({ name: 1, category: 1 });
 
 // Create & Export Model
-const Product = mongoose.model<IProduct>("Product", productSchema);
+export const Product = mongoose.model<IProduct>("Product", productSchema);
 export default Product;

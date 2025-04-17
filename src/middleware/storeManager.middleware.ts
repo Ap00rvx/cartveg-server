@@ -42,7 +42,7 @@ export const verifyStoreManager = async (
     const decoded = jwt.verify(token, process.env.JWT_SECRET || "your-secret-key") as JwtPayload;
 
     // Find admin by ID
-    const admin = await Admin.findById(decoded.id).select("role isSuperAdmin storeId isActivate");
+    const admin = await Admin.findOne({email : decoded.email}).select("role isSuperAdmin storeId isActivate");
     if (!admin) {
       res.status(401).json({
         success: false,
@@ -51,14 +51,14 @@ export const verifyStoreManager = async (
       return;
     }
 
-    // Check if admin is activated
-    if (!admin.isActivate) {
-      res.status(403).json({
-        success: false,
-        message: "Admin account is not activated",
-      });
-      return;
-    }
+    // // Check if admin is activated
+    // if (!admin.isActivate) {
+    //   res.status(403).json({
+    //     success: false,
+    //     message: "Admin account is not activated",
+    //   });
+    //   return;
+    // }
 
     // Allow SuperAdmin to proceed without storeId check
     if (admin.isSuperAdmin || admin.role === AdminRole.SuperAdmin) {
