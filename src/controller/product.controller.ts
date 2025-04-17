@@ -292,6 +292,163 @@ export const getAllProductsWithAvailability = async (req: Request, res: Response
         error: error.message,
       });
     }
-  };
+};
 
+export const getAvailableProductsWithCategory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const category = req.query.category as string | undefined; // Get category from query parameters
+    const latitude = parseFloat(req.query.latitude as string);
+    const longitude = parseFloat(req.query.longitude as string);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
 
+    // Validate latitude and longitude
+    if (isNaN(latitude) || isNaN(longitude)) {
+      res.status(400).json({
+        success: false,
+        message: "Valid latitude and longitude are required",
+      });
+      return;
+    }
+
+    // Validate pagination
+    if (page < 1 || limit < 1) {
+      res.status(400).json({
+        success: false,
+        message: "Page and limit must be positive integers",
+      });
+      return;
+    }
+
+    // Validate category if provided
+    if (category && !category.trim()) {
+      res.status(400).json({
+        success: false,
+        message: "Category cannot be empty",
+      });
+      return;
+    }
+
+    // Fetch all stores
+    const stores = await Store.find()
+      .select("name address phone email latitude longitude radius openingTime")
+      .lean();
+
+    if (!stores || stores.length === 0) {
+      res.status(404).json({
+        success: false,
+        message: "No stores found",
+      });
+      return;
+    }
+
+    // Find the nearest store within its radius
+    let nearestStore: any = null;
+    let minDistance = Infinity;
+
+    for (const store of stores) {
+      const distance = haversineDistance(latitude, longitude, store.latitude, store.longitude);
+      if (distance <= store.radius && distance < minDistance) {
+        minDistance = distance;
+        nearestStore = store;
+      }
+    }
+
+    if (!nearestStore) {
+      res.status(404).json({
+        success: false,
+        message: "No stores found within their service radius",
+      });
+      return;
+    }
+
+    // Prepare case-insensitive regex for category
+    const categoryRegex = category ? new RegExp(escapeRegex(category), "i") : undefined;
+
+    // Log the regex for debugging
+    console.log("Category regex:", categoryRegex?.toString());
+
+    // Find inventory for the nearest store
+    const inventory = await Inventory.findOne({ storeId: nearestStore._id })
+      .populate({
+        path: "products.productId",
+        select: "name description unit price actualPrice category origin shelfLife image",
+        match: categoryRegex ? { category: { $regex: categoryRegex } } : {}, // Filter by category (case-insensitive)
+      })
+      .lean();
+
+    // Log populated products for debugging
+    console.log("Populated products:", inventory?.products?.length || 0);
+
+    if (!inventory) {
+      res.status(404).json({
+        success: false,
+        message: "No inventory found for the nearest store",
+      });
+      return;
+    }
+
+    // Filter available products and paginate
+    const availableProducts = (inventory.products as PopulatedProduct[])
+      .filter((product) => product.availability && product.productId) // Only available products with valid productId
+      .map((product) => ({
+        productId: product.productId._id,
+        quantity: product.quantity,
+        threshold: product.threshold,
+        availability: product.availability,
+        details: {
+          name: product.productId.name,
+          description: product.productId.description,
+          unit: product.productId.unit,
+          price: product.productId.price,
+          actualPrice: product.productId.actualPrice,
+          category: product.productId.category,
+          origin: product.productId.origin,
+          shelfLife: product.productId.shelfLife,
+          image: product.productId.image,
+        },
+      }));
+
+    // Paginate results
+    const totalProducts = availableProducts.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedProducts = availableProducts.slice(startIndex, startIndex + limit);
+
+    // Return response
+    res.status(200).json({
+      success: true,
+      message: "Available products retrieved successfully",
+      data: {
+        store: {
+          _id: nearestStore._id,
+          name: nearestStore.name,
+          address: nearestStore.address,
+          phone: nearestStore.phone,
+          email: nearestStore.email,
+          latitude: nearestStore.latitude,
+          longitude: nearestStore.longitude,
+          radius: nearestStore.radius,
+          openingTime: nearestStore.openingTime,
+        },
+        products: paginatedProducts,
+        pagination: {
+          currentPage: page,
+          limit,
+          totalProducts,
+          totalPages: Math.ceil(totalProducts / limit),
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error("Error fetching products by category:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching products by category",
+      error: error.message,
+    });
+  }
+};
+// Escape special regex characters
+const escapeRegex = (text: string): string => {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};

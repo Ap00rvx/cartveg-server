@@ -1,6 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PaymentStatus = exports.OrderStatus = void 0;
+exports.PaymentStatus = exports.OrderStatus = exports.AdminRole = void 0;
+var AdminRole;
+(function (AdminRole) {
+    AdminRole["SuperAdmin"] = "superadmin";
+    AdminRole["StoreManager"] = "storemanager";
+})(AdminRole || (exports.AdminRole = AdminRole = {}));
 var OrderStatus;
 (function (OrderStatus) {
     OrderStatus["Placed"] = "placed";

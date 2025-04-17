@@ -358,5 +358,102 @@ export const updateStock = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
+export const getAllProducts = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get pagination parameters
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
 
+    // Validate pagination
+    if (page < 1 || limit < 1) {
+      res.status(400).json({
+        success: false,
+        message: "Page and limit must be positive integers",
+      });
+      return;
+    }
+
+    // Calculate skip for pagination
+    const skip = (page - 1) * limit;
+
+    // Fetch products with pagination
+    const products = await Product.find({})
+      .select("-__v") // Exclude __v field
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Get total product count
+    const totalProducts = await Product.countDocuments();
+
+    if (!products || products.length === 0) {
+      res.status(404).json({
+        success: false,
+        message: "No products found",
+      });
+      return;
+    }
+
+    // Return response
+    res.status(200).json({
+      success: true,
+      message: "Products retrieved successfully",
+      data: {
+        products,
+        pagination: {
+          currentPage: page,
+          limit,
+          totalProducts,
+          totalPages: Math.ceil(totalProducts / limit),
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error("Error retrieving products:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while retrieving products",
+      error: error.message,
+    });
+  }
+};
+export const getProductById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const productId = req.params.id;
+
+    // Validate productId
+    if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid productId format",
+      });
+      return;
+    }
+
+    // Fetch product by ID
+    const product = await Product.findById(productId).lean();
+
+    if (!product) {
+      res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+      return;
+    }
+
+    // Return response
+    res.status(200).json({
+      success: true,
+      message: "Product retrieved successfully",
+      data: product,
+    });
+  } catch (error: any) {
+    console.error("Error retrieving product:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while retrieving product",
+      error: error.message,
+    });
+  }
+};
 
