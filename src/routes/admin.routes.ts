@@ -1,26 +1,22 @@
-import { updateProductAvailability,updateProductThreshold,sendNotification,getAllOrders,updateProductDetails,uploadCSV,updateUserDetails,updateProductStock,createAdminUser,adminLogin,createMultipleProducts,deleteMultipleProducts,getProductById,exportProductCSV,getAllProducts,searchProducts,getAllUsers,deleteUser, createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser,updateOrderStatus} from "../controller/admin.controller";
+import { sendNotification,createAdmin,createStore,getAllOrders,updateUserDetails,createMultipleProducts,deleteMultipleProducts,getProductById,getAllProducts,searchProducts,getAllUsers,deleteUser, createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser} from "../controller/admin.controller";
 import { Router } from "express";
 import { adminMiddleware } from "../middleware/admin.middleware";
 import uploadBuffer from "../config/csv-buffer";
 
 const router = Router();
 
-router.put("/updateProductStock", adminMiddleware,updateProductStock);
-router.put("/updateProductDetails",adminMiddleware, updateProductDetails);
-router.put("/updateProductThreshold", adminMiddleware,updateProductThreshold);
-router.put("/updateProductAvailability", adminMiddleware,updateProductAvailability);
+
 router.put("/user/update",adminMiddleware,updateUserDetails); 
 
-
-router.post("/createAdminUser", adminMiddleware,createAdminUser);
 router.delete("/deleteProducts", adminMiddleware,deleteMultipleProducts);
 router.post("/createProducts", adminMiddleware,createMultipleProducts);
-router.post("/upload-csv",uploadBuffer,uploadCSV)
-router.get("/product-csv",exportProductCSV);
+
 router.post("/user/create",adminMiddleware,createUser);
 router.post("/send-notification", adminMiddleware,sendNotification);
-router.post("/update/order", adminMiddleware,updateOrderStatus);
-router.post("/login", adminLogin);
+
+
+router.post("/create-admin",createAdmin); 
+router.post("/create-store",adminMiddleware,createStore)
 
 router.get("/products", adminMiddleware,getAllProducts);
 router.get("/p/", adminMiddleware,getProductById);

@@ -21,14 +21,14 @@ export interface IAddress {
 }
 export interface IStore {
     name: string;
-    address: IAddress;
+    address: Object;
     phone: string;
     email: string;
     longitude: number;
     latitude: number;
     radius: number;
     openingTime: string;  
-    storeId : mongoose.Types.ObjectId;
+    
 }
 export interface INotification {
     title: string;
@@ -37,17 +37,18 @@ export interface INotification {
     data?: any; // Optional field for additional data
 }
 
-export interface IInventory{
-    inventoryId: mongoose.Types.ObjectId;
-    productId: mongoose.Types.ObjectId;
-    stock: number;
+export interface IStoreInventory {
+    // Array of products with inventory details
+    products: Array<{
+      productId: mongoose.Types.ObjectId; // Reference to Product document
+      quantity: number; // Current stock quantity
+      threshold: number; // Minimum quantity before restock is needed
+      availability: boolean; // Indicates if the product is available for sale
+    }>;
+    
+    // Reference to the store
     storeId: mongoose.Types.ObjectId;
-    threshold: number;
-    isAvailable: boolean;
-    sellingPrice : number;
-    actualPrice : number;
-
-}
+  }
 export interface IProduct {
     name: string;
     description: string;

@@ -48,4 +48,4 @@ const adminSchema = new mongoose.Schema<IAdmin>({
 
 // Create Admin Model
 
-const Admin = mongoose.model<IAdmin>("Admin", adminSchema);
+export const Admin = mongoose.model<IAdmin>("Admin", adminSchema);
