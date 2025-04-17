@@ -6,12 +6,8 @@ export interface IUser {
     fcmTokens: string[];
     addresses: IAddress[];
     phone : string;
-     // optional fields 
     dob?: Date; 
-    // Define or import UserRole
-     role?: 'admin' | 'user' ; // Example definition, adjust as needed
     isActivate?: boolean;
-    password?: string;
     orders?: string[];
 }
 export interface IAddress {
@@ -20,6 +16,19 @@ export interface IAddress {
     city: string
     state: string; 
     pincode: string;
+    latitude: number;
+    longitude: number;
+}
+export interface IStore {
+    name: string;
+    address: Object;
+    phone: string;
+    email: string;
+    longitude: number;
+    latitude: number;
+    radius: number;
+    openingTime: string;  
+    
 }
 export interface INotification {
     title: string;
@@ -27,20 +36,48 @@ export interface INotification {
     image?: string; // Optional field
     data?: any; // Optional field for additional data
 }
+
+export interface IStoreInventory {
+    // Array of products with inventory details
+    products: Array<{
+      productId: mongoose.Types.ObjectId; // Reference to Product document
+      quantity: number; // Current stock quantity
+      threshold: number; // Minimum quantity before restock is needed
+      availability: boolean; // Indicates if the product is available for sale
+    }>;
+    
+    // Reference to the store
+    storeId: mongoose.Types.ObjectId;
+  }
 export interface IProduct {
     name: string;
     description: string;
-    price: number;
     category: string;
-    stock: number;
     image: string;
     unit:string;
-    actualPrice: number;
     origin : string;
     shelfLife: string;
-    threshold: number;
-    isAvailable: boolean;
+    price: number;
+    actualPrice?: number;
+    
 }
+export interface IAdmin {
+    name: string;
+    email: string;
+    password: string;
+    isActivate?: boolean;
+    isSuperAdmin?: boolean;
+    role : AdminRole;
+    storeId?: mongoose.Types.ObjectId;
+}
+
+
+export enum AdminRole {
+    SuperAdmin = "superadmin",
+    StoreManager = "storemanager",
+}
+
+
 export enum OrderStatus {
     Placed = "placed",
     Shipped = "shipped",
@@ -99,4 +136,3 @@ export interface ICoupon {
     isDeleted: boolean;
     usedUsers : string[]; 
 }
-

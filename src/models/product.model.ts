@@ -24,23 +24,15 @@ const productSchema = new Schema<IProduct>(
       trim: true,
       default: "450-550g"
     },
-    actualPrice : {
-      type: Number,
-      required: [true, "Actual Price is required"],
-      min: [0, "Price must be a positive number"],
-      default : function() {
-        return this.price 
-      }
-    },
-    price: {
+    price:{
       type: Number,
       required: [true, "Price is required"],
       min: [0, "Price must be a positive number"],
     },
-    stock: {
+    
+    actualPrice: {
       type: Number,
-      required: [true, "Stock quantity is required"],
-      min: [0, "Stock cannot be negative"],
+      min: [0, "Actual price must be a positive number"],
     },
 
     category: {
@@ -59,18 +51,7 @@ const productSchema = new Schema<IProduct>(
       required: [true, "Shelf life is required"],
       trim: true,
     },
-    isAvailable: {
-      type: Boolean,
-      default: true,
-      required: true,
-      
-    },
-    threshold: {
-      type: Number,
-      default:10, 
-      required: [true, "Threshold quantity is required"],
-      min: [0, "Threshold quantity cannot be negative"],
-    },
+    
     // Image Handling
     image: {
       type: String,
@@ -83,5 +64,5 @@ const productSchema = new Schema<IProduct>(
 productSchema.index({ name: 1, category: 1 });
 
 // Create & Export Model
-const Product = mongoose.model<IProduct>("Product", productSchema);
+export const Product = mongoose.model<IProduct>("Product", productSchema);
 export default Product;

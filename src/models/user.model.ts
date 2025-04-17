@@ -8,27 +8,22 @@ export const addressSchema = new mongoose.Schema<IAddress>({
     city: { type: String, required: true },
     state: { type: String, required: true },
     pincode: { type: String, required: true },
+    latitude: { type: Number, required: true },
+    longitude: { type: Number, required: true },
 });
 
 const userSchema = new mongoose.Schema<IUser>({
     name: { type: String, default: "" },
     email: { type: String, required: true },
-    
     fcmTokens: [{ type: String } , { default: [] }],
     addresses: [addressSchema, { default: [] }],
     phone: { type: String, default: "" },
     dob: { type: Date },
-    role: { type: String,enum:["user","admin"], default: "user" },
     isActivate: { type: Boolean, default: false },
-    password: { type: String, default: "",required: function(){
-        return this.role === "admin";
-    } },
     orders: {
         type: [String], //list of string
         default: [],
     }
-
-    
 },{
     timestamps: true,
 });
