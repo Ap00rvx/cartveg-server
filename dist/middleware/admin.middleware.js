@@ -14,7 +14,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.adminMiddleware = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const user_model_1 = __importDefault(require("../models/user.model"));
+const admin_model_1 = require("../models/admin.model");
 const adminMiddleware = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const bearerToken = req.headers.authorization;
@@ -28,8 +28,8 @@ const adminMiddleware = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             return;
         }
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
-        const user = yield user_model_1.default.findOne({ email: decoded.email });
-        if (!user || user.role !== "admin") {
+        const admin = yield admin_model_1.Admin.findOne({ email: decoded.email });
+        if (!admin || admin.role !== "superadmin") {
             res.status(401).json({ msg: "Unauthorized: Admin access required" });
             return;
         }

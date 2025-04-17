@@ -12,201 +12,389 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.searchProducts = exports.getProducts = exports.createProduct = exports.getSearchProductList = exports.getAvailableProductIds = void 0;
-const product_model_1 = __importDefault(require("../models/product.model"));
-const node_cache_1 = __importDefault(require("node-cache"));
-const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.getAvailableProductsWithCategory = exports.getAllProductsWithAvailability = exports.getProductsByLocation = void 0;
+const store_model_1 = require("../models/store.model"); // Adjust path to your Store model
+const inventory_model_1 = require("../models/inventory.model"); // Adjust path to your Inventory model
+const product_model_1 = __importDefault(require("../models/product.model")); // Adjust path to your Product model
+// Haversine formula to calculate distance between two points (in kilometers)
+const haversineDistance = (lat1, lon1, lat2, lon2) => {
+    const toRad = (value) => (value * Math.PI) / 180;
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
+// Controller to search products by user location using latitude and longitude
+const getProductsByLocation = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        // Destructure request body
-        const { name, description, price, category, stock, image, origin, shelfLife } = req.body;
-        // Input Validation
-        if (!name || !description || !price || !category || !stock || !origin || !shelfLife) {
+        // Get query parameters
+        const latitude = parseFloat(req.query.latitude);
+        const longitude = parseFloat(req.query.longitude);
+        const category = req.query.category;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        // Validate latitude and longitude
+        if (isNaN(latitude) || isNaN(longitude)) {
             res.status(400).json({
-                statusCode: 400,
-                message: "All fields are required.",
+                success: false,
+                message: "Valid latitude and longitude are required",
             });
             return;
         }
-        if (price < 0 || stock < 0) {
+        // Validate pagination
+        if (page < 1 || limit < 1) {
             res.status(400).json({
-                statusCode: 400,
-                message: "Price and stock must be non-negative values.",
+                success: false,
+                message: "Page and limit must be positive integers",
             });
             return;
         }
-        // Create product instance
-        const product = new product_model_1.default({
-            name,
-            description,
-            price,
-            category,
-            stock,
-            image: image || undefined, // Defaults to schema default if not provided
-            origin,
-            shelfLife,
-        });
-        // Save product to database
-        yield product.save();
-        // Success Response
-        const successResponse = {
-            statusCode: 201,
-            message: "Product added successfully",
-            data: product,
-        };
-        res.status(201).json(successResponse);
-    }
-    catch (error) {
-        console.error("Error creating product:", error);
-        // Handle Mongoose Validation Errors
-        if (error.name === "ValidationError") {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Validation error",
-                errors: error.errors,
+        // Fetch all stores
+        const stores = yield store_model_1.Store.find()
+            .select("name address phone email latitude longitude radius openingTime")
+            .lean();
+        if (!stores || stores.length === 0) {
+            res.status(404).json({
+                success: false,
+                message: "No stores found",
             });
             return;
         }
-        // Handle Duplicate Key Errors (e.g., unique name constraint)
-        if (error.code === 11000) {
-            res.status(400).json({
-                statusCode: 400,
-                message: "Duplicate entry detected",
-                details: error.keyValue,
+        // Find the nearest store within its radius
+        let nearestStore = null;
+        let minDistance = Infinity;
+        for (const store of stores) {
+            const distance = haversineDistance(latitude, longitude, store.latitude, store.longitude);
+            console.log("Distance to store:", distance, "km");
+            if (distance <= store.radius && distance < minDistance) {
+                minDistance = distance;
+                nearestStore = store;
+            }
+        }
+        if (!nearestStore) {
+            res.status(404).json({
+                success: false,
+                message: "No stores found within their service radius",
             });
             return;
         }
-        // General Internal Server Error
-        const internalServerErrorResponse = {
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? error.stack : undefined, // Hide stack in production
-        };
-        res.status(500).json(internalServerErrorResponse);
-    }
-});
-exports.createProduct = createProduct;
-const getProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        let { page = "1", limit = "10", sort = "createdAt", order = "desc", category } = req.query;
-        // Convert query params to numbers where needed
-        const pageNumber = Math.max(1, parseInt(page, 10));
-        const limitNumber = Math.max(1, parseInt(limit, 10));
-        const skip = (pageNumber - 1) * limitNumber;
-        // Sorting configuration
-        const sortOrder = order === "asc" ? 1 : -1;
-        const sortQuery = { [sort]: sortOrder };
-        // Filtering by category if provided
-        const filter = {
-            isAvailable: true, // Ensure only available products are fetched
-        };
-        if (category) {
-            // make in case-insensitive
-            filter.category = { $regex: new RegExp(category, "i") };
+        // Find inventory for the nearest store
+        const inventory = yield inventory_model_1.Inventory.findOne({ storeId: nearestStore._id })
+            .populate({
+            path: "products.productId",
+            select: "name description unit price actualPrice category origin shelfLife image",
+            match: category ? { category } : {}, // Filter by category if provided
+        })
+            .lean();
+        if (!inventory) {
+            res.status(404).json({
+                success: false,
+                message: "No inventory found for the nearest store",
+            });
+            return;
         }
-        // Fetch products with pagination
-        const products = yield product_model_1.default.find(filter)
-            .sort(sortQuery)
-            .skip(skip)
-            .limit(limitNumber);
-        // Count total products for pagination metadata
-        const totalProducts = yield product_model_1.default.countDocuments(filter);
-        const totalPages = Math.ceil(totalProducts / limitNumber);
-        // Success Response
+        // Filter available products and paginate
+        const availableProducts = inventory.products
+            .filter((product) => product.availability && product.productId) // Only available products with valid productId
+            .map((product) => ({
+            productId: product.productId._id,
+            quantity: product.quantity,
+            threshold: product.threshold,
+            availability: product.availability,
+            details: {
+                name: product.productId.name,
+                description: product.productId.description,
+                unit: product.productId.unit,
+                price: product.productId.price,
+                actualPrice: product.productId.actualPrice,
+                category: product.productId.category,
+                origin: product.productId.origin,
+                shelfLife: product.productId.shelfLife,
+                image: product.productId.image,
+            },
+        }));
+        // caluclate a avg delivery time based on distance
+        const deliveryTime = Math.round(minDistance * 5); // Assuming 1 km takes 5 minutes to deliver
+        // Paginate results
+        const totalProducts = availableProducts.length;
+        const startIndex = (page - 1) * limit;
+        const paginatedProducts = availableProducts.slice(startIndex, startIndex + limit);
+        // Return response
         res.status(200).json({
-            statusCode: 200,
-            message: "Products retrieved successfully",
+            success: true,
+            message: "Products retrieved successfully from nearest store",
             data: {
-                products, // No need to filter manually since it's already done in the query
+                store: {
+                    _id: nearestStore._id,
+                    name: nearestStore.name,
+                    address: nearestStore.address,
+                    phone: nearestStore.name,
+                    email: nearestStore.email,
+                    latitude: nearestStore.latitude,
+                    longitude: nearestStore.longitude,
+                    radius: nearestStore.radius,
+                    openingTime: nearestStore.openingTime,
+                },
+                products: paginatedProducts,
+                deliveryTime: `${deliveryTime} minutes`,
                 pagination: {
-                    currentPage: pageNumber,
-                    totalPages,
+                    currentPage: page,
+                    limit,
                     totalProducts,
-                    limit: limitNumber,
+                    totalPages: Math.ceil(totalProducts / limit),
                 },
             },
         });
     }
     catch (error) {
-        console.error("Error fetching products:", error);
-        // Internal Server Error Response
+        console.error("Error searching products by location:", error);
         res.status(500).json({
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+            success: false,
+            message: "Server error while searching products",
+            error: error.message,
         });
     }
 });
-exports.getProducts = getProducts;
-// Initialize cache with 10 minutes expiration
-const productCache = new node_cache_1.default({ stdTTL: 900, checkperiod: 920 });
-const searchProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.getProductsByLocation = getProductsByLocation;
+// Controller to get  products by store ID without pagination
+const getAllProductsWithAvailability = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     try {
-        const query = (_a = req.query.query) === null || _a === void 0 ? void 0 : _a.trim().toLowerCase();
-        if (!query) {
-            res.status(400).json({ message: "Query parameter is required" });
+        // Get query parameters
+        const latitude = parseFloat(req.query.latitude);
+        const longitude = parseFloat(req.query.longitude);
+        // Validate latitude and longitude
+        if (isNaN(latitude) || isNaN(longitude)) {
+            res.status(400).json({
+                success: false,
+                message: "Valid latitude and longitude are required",
+            });
             return;
         }
-        // Check cache first
-        const cachedProducts = productCache.get("allProducts");
-        if (cachedProducts) {
-            console.log("Serving from cache");
-            const filteredProducts = cachedProducts.filter(product => product.name.toLowerCase().includes(query)).slice(0, 20);
-            res.status(200).json({ statusCode: 200, data: filteredProducts });
+        // Fetch all stores
+        const stores = yield store_model_1.Store.find()
+            .select("name latitude longitude radius")
+            .lean();
+        if (!stores || stores.length === 0) {
+            res.status(404).json({
+                success: false,
+                message: "No stores found",
+            });
             return;
         }
-        console.log("Fetching from database...");
-        // Fetch from DB and cache it
-        const products = yield product_model_1.default.find({
-            isAvailable: true,
+        // Find the nearest store within its radius
+        let nearestStore = null;
+        let minDistance = Infinity;
+        for (const store of stores) {
+            const distance = haversineDistance(latitude, longitude, store.latitude, store.longitude);
+            if (distance <= store.radius && distance < minDistance) {
+                minDistance = distance;
+                nearestStore = store;
+            }
+        }
+        if (!nearestStore) {
+            res.status(404).json({
+                success: false,
+                message: "No stores found within their service radius",
+            });
+            return;
+        }
+        // Fetch inventory for the nearest store
+        const inventory = yield inventory_model_1.Inventory.findOne({ storeId: nearestStore._id })
+            .select("products.productId products.availability")
+            .lean();
+        // Create a map of available product IDs
+        const availableProductIds = new Set(((_a = inventory === null || inventory === void 0 ? void 0 : inventory.products) === null || _a === void 0 ? void 0 : _a.filter((product) => product.availability).map((product) => product.productId.toString())) || []);
+        // Fetch all products with pagination
+        const products = yield product_model_1.default.find()
+            .select("name description unit price actualPrice category origin shelfLife image")
+            .lean();
+        const totalProducts = yield product_model_1.default.countDocuments();
+        // Format products with availability
+        const formattedProducts = products.map((product) => ({
+            _id: product._id,
+            name: product.name,
+            description: product.description,
+            unit: product.unit,
+            price: product.price,
+            actualPrice: product.actualPrice,
+            category: product.category,
+            origin: product.origin,
+            shelfLife: product.shelfLife,
+            image: product.image,
+            availability: availableProductIds.has(product._id.toString()),
+        }));
+        // Return response
+        res.status(200).json({
+            success: true,
+            message: "Products retrieved successfully with availability",
+            data: {
+                store: {
+                    _id: nearestStore._id,
+                    name: nearestStore.name,
+                    latitude: nearestStore.latitude,
+                    longitude: nearestStore.longitude,
+                    radius: nearestStore.radius,
+                },
+                products: formattedProducts,
+            },
         });
-        productCache.set("allProducts", products);
-        // Filter results
-        const filteredProducts = products.filter(product => product.name.toLowerCase().includes(query)).slice(0, 20);
-        res.status(200).json({ statusCode: 200, data: filteredProducts });
     }
-    catch (err) {
+    catch (error) {
+        console.error("Error fetching products with availability:", error);
         res.status(500).json({
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+            success: false,
+            message: "Server error while fetching products",
+            error: error.message,
         });
     }
 });
-exports.searchProducts = searchProducts;
-const getAvailableProductIds = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.getAllProductsWithAvailability = getAllProductsWithAvailability;
+const getAvailableProductsWithCategory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     try {
-        const products = yield product_model_1.default.find({ isAvailable: true }).select("id");
-        const ids = products.map((product) => product.id);
-        res.status(200).json(ids);
+        const category = req.query.category; // Get category from query parameters
+        const latitude = parseFloat(req.query.latitude);
+        const longitude = parseFloat(req.query.longitude);
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        // Validate latitude and longitude
+        if (isNaN(latitude) || isNaN(longitude)) {
+            res.status(400).json({
+                success: false,
+                message: "Valid latitude and longitude are required",
+            });
+            return;
+        }
+        // Validate pagination
+        if (page < 1 || limit < 1) {
+            res.status(400).json({
+                success: false,
+                message: "Page and limit must be positive integers",
+            });
+            return;
+        }
+        // Validate category if provided
+        if (category && !category.trim()) {
+            res.status(400).json({
+                success: false,
+                message: "Category cannot be empty",
+            });
+            return;
+        }
+        // Fetch all stores
+        const stores = yield store_model_1.Store.find()
+            .select("name address phone email latitude longitude radius openingTime")
+            .lean();
+        if (!stores || stores.length === 0) {
+            res.status(404).json({
+                success: false,
+                message: "No stores found",
+            });
+            return;
+        }
+        // Find the nearest store within its radius
+        let nearestStore = null;
+        let minDistance = Infinity;
+        for (const store of stores) {
+            const distance = haversineDistance(latitude, longitude, store.latitude, store.longitude);
+            if (distance <= store.radius && distance < minDistance) {
+                minDistance = distance;
+                nearestStore = store;
+            }
+        }
+        if (!nearestStore) {
+            res.status(404).json({
+                success: false,
+                message: "No stores found within their service radius",
+            });
+            return;
+        }
+        // Prepare case-insensitive regex for category
+        const categoryRegex = category ? new RegExp(escapeRegex(category), "i") : undefined;
+        // Log the regex for debugging
+        console.log("Category regex:", categoryRegex === null || categoryRegex === void 0 ? void 0 : categoryRegex.toString());
+        // Find inventory for the nearest store
+        const inventory = yield inventory_model_1.Inventory.findOne({ storeId: nearestStore._id })
+            .populate({
+            path: "products.productId",
+            select: "name description unit price actualPrice category origin shelfLife image",
+            match: categoryRegex ? { category: { $regex: categoryRegex } } : {}, // Filter by category (case-insensitive)
+        })
+            .lean();
+        // Log populated products for debugging
+        console.log("Populated products:", ((_a = inventory === null || inventory === void 0 ? void 0 : inventory.products) === null || _a === void 0 ? void 0 : _a.length) || 0);
+        if (!inventory) {
+            res.status(404).json({
+                success: false,
+                message: "No inventory found for the nearest store",
+            });
+            return;
+        }
+        // Filter available products and paginate
+        const availableProducts = inventory.products
+            .filter((product) => product.availability && product.productId) // Only available products with valid productId
+            .map((product) => ({
+            productId: product.productId._id,
+            quantity: product.quantity,
+            threshold: product.threshold,
+            availability: product.availability,
+            details: {
+                name: product.productId.name,
+                description: product.productId.description,
+                unit: product.productId.unit,
+                price: product.productId.price,
+                actualPrice: product.productId.actualPrice,
+                category: product.productId.category,
+                origin: product.productId.origin,
+                shelfLife: product.productId.shelfLife,
+                image: product.productId.image,
+            },
+        }));
+        // Paginate results
+        const totalProducts = availableProducts.length;
+        const startIndex = (page - 1) * limit;
+        const paginatedProducts = availableProducts.slice(startIndex, startIndex + limit);
+        // Return response
+        res.status(200).json({
+            success: true,
+            message: "Available products retrieved successfully",
+            data: {
+                store: {
+                    _id: nearestStore._id,
+                    name: nearestStore.name,
+                    address: nearestStore.address,
+                    phone: nearestStore.phone,
+                    email: nearestStore.email,
+                    latitude: nearestStore.latitude,
+                    longitude: nearestStore.longitude,
+                    radius: nearestStore.radius,
+                    openingTime: nearestStore.openingTime,
+                },
+                products: paginatedProducts,
+                pagination: {
+                    currentPage: page,
+                    limit,
+                    totalProducts,
+                    totalPages: Math.ceil(totalProducts / limit),
+                },
+            },
+        });
     }
-    catch (err) {
+    catch (error) {
+        console.error("Error fetching products by category:", error);
         res.status(500).json({
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+            success: false,
+            message: "Server error while fetching products by category",
+            error: error.message,
         });
     }
 });
-exports.getAvailableProductIds = getAvailableProductIds;
-const getSearchProductList = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        // return only id,name and image
-        const products = yield product_model_1.default.find();
-        const successResponse = {
-            statusCode: 200,
-            message: "Products retrieved successfully",
-            data: products,
-        };
-        res.status(200).json(successResponse);
-    }
-    catch (err) {
-        const internalServerError = {
-            statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        };
-        res.status(500).json(internalServerError);
-    }
-});
-exports.getSearchProductList = getSearchProductList;
+exports.getAvailableProductsWithCategory = getAvailableProductsWithCategory;
+// Escape special regex characters
+const escapeRegex = (text) => {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
