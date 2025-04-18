@@ -51,6 +51,14 @@ const invoiceSchema = new mongoose_1.Schema({
         required: true,
         default: interface_1.PaymentStatus.Pending,
     },
+    shippingAmount: {
+        type: Number, required: true, min: 0
+    },
+    discount: {
+        type: Number,
+        required: true,
+        default: 0
+    },
     billingAddress: {
         flatno: { type: String, required: true },
         street: { type: String, required: true },

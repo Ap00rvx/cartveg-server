@@ -61,6 +61,9 @@ export interface IProduct {
     actualPrice?: number;
     
 }
+export interface IInvoice { 
+    
+}
 export interface IAdmin {
     name: string;
     email: string;
@@ -83,6 +86,7 @@ export enum OrderStatus {
     Shipped = "shipped",
     Delivered = "delivered",
     Cancelled = "cancelled",
+    Confirmed = "confirmed"
 }
 
 export enum PaymentStatus {
@@ -90,6 +94,7 @@ export enum PaymentStatus {
     Paid = "paid",
     Failed = "failed",
     Refund = "refund",
+    Cancelled = "cancelled"
 } 
 export interface ICartItem { 
     productId :  mongoose.Types.ObjectId; 
@@ -109,6 +114,7 @@ export interface IOrder {
         quantity: number;
     }[]; 
     orderDate: Date;
+    storeId : mongoose.Types.ObjectId ; 
     expectedDeliveryDate: Date; 
     totalAmount: number; 
     totalItems: number;
