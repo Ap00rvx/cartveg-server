@@ -20,7 +20,4 @@ router.get("/product/", verifyStoreManager, getAllProducts); // Route to get all
 router.get("/product/:id", verifyStoreManager, getProductById); // Route to get a product by ID
 // Route to update product availability
 
-
-
-
 export default router;

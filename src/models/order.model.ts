@@ -33,6 +33,10 @@ const orderSchema = new mongoose.Schema<IOrder>({
       return new Date(this.orderDate.getTime() + 2 * 24 * 60 * 60 * 1000);
     },
   },
+  storeId :{
+    type : Schema.Types.ObjectId,
+    required : true, 
+  },
   totalAmount: {
     type: Number,
     required: true,
