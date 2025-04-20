@@ -66,6 +66,10 @@ const orderSchema = new mongoose_1.default.Schema({
             return new Date(this.orderDate.getTime() + 2 * 24 * 60 * 60 * 1000);
         },
     },
+    storeId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        required: true,
+    },
     totalAmount: {
         type: Number,
         required: true,

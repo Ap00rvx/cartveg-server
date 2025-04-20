@@ -12,6 +12,8 @@ export interface IInvoice extends Document {
     },
     totalAmount: number;
     paymentStatus: PaymentStatus;
+    shippingAmount : number; 
+    discount : number; 
     billingAddress: {
         flatno: string;
         street: string;
@@ -51,6 +53,14 @@ const invoiceSchema = new Schema<IInvoice>({
         required: true,
         default: PaymentStatus.Pending,
     },
+    shippingAmount :{
+        type: Number, required: true, min: 0
+    },
+    discount : {
+        type:Number, 
+        required : true, 
+        default : 0 
+    }, 
     billingAddress: {
         flatno: { type: String, required: true },
         street: { type: String, required: true },

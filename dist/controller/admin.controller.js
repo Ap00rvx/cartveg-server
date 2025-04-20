@@ -8,24 +8,34 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __rest = (this && this.__rest) || function (s, e) {
+    var t = {};
+    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
+        t[p] = s[p];
+    if (s != null && typeof Object.getOwnPropertySymbols === "function")
+        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
+            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
+                t[p[i]] = s[p[i]];
+        }
+    return t;
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.updateOrderStatus = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.exportProductCSV = exports.uploadCSV = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.adminLogin = exports.createAdminUser = exports.updateProductThreshold = exports.updateProductAvailability = exports.updateProductDetails = exports.updateProductStock = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
+exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const helpers_1 = require("../config/helpers");
-const interface_1 = require("../types/interface/interface");
 const cache_1 = __importDefault(require("../config/cache"));
-const papaparse_1 = __importDefault(require("papaparse"));
 const order_model_1 = __importDefault(require("../models/order.model"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
-const interface_2 = require("../types/interface/interface");
-const json2csv_1 = require("json2csv");
 const mongoose_1 = __importDefault(require("mongoose"));
 const coupon_model_1 = __importDefault(require("../models/coupon.model"));
+const admin_model_1 = require("../models/admin.model");
+const interface_1 = require("../types/interface/interface");
+const store_model_1 = require("../models/store.model");
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const products = req.body;
@@ -39,26 +49,20 @@ const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, f
         }
         // Validate each product before insertion
         for (const product of products) {
-            const { name, description, price, category, stock, origin, shelfLife, actualPrice, threshold } = product;
-            if (!name || !description || !price || !category || !stock || !origin || !shelfLife || !actualPrice || !threshold) {
+            const { name, description, price, category, origin, shelfLife, actualPrice } = product;
+            if (!name || !description || !price || !category || !origin || !shelfLife || !actualPrice) {
                 res.status(400).json({
                     statusCode: 400,
                     message: "All product fields are required.",
                 });
                 return;
             }
-            if (price < 0 || stock < 0) {
+            if (price < 0) {
                 res.status(400).json({
                     statusCode: 400,
-                    message: "Price and stock must be non-negative values.",
+                    message: "Price  must be non-negative values.",
                 });
                 return;
-            }
-            if (stock < threshold) {
-                product.isAvailable = false;
-            }
-            else {
-                product.isAvailable = true;
             }
         }
         // Insert products into database
@@ -209,227 +213,6 @@ const getProductById = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.getProductById = getProductById;
-const updateProductStock = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { productId, updatedStockValue } = req.body;
-        if (!productId || !updatedStockValue) {
-            res.status(400).json({ message: "productId and quantity are required" });
-            return;
-        }
-        // Find product by ID
-        const product = yield product_model_1.default.findById(productId);
-        if (!product) {
-            res.status(404).json({ message: "Product not found" });
-            return;
-        }
-        // Update stock
-        if (updatedStockValue < product.threshold) {
-            product.isAvailable = false;
-            product.stock = updatedStockValue;
-        }
-        else {
-            product.stock = updatedStockValue;
-            product.isAvailable = true;
-        }
-        yield product.save();
-        res.status(200).json({ message: "Stock updated successfully", data: product });
-    }
-    catch (err) {
-        res.status(500).json({
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        });
-    }
-});
-exports.updateProductStock = updateProductStock;
-const updateProductDetails = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { productId, updatedDetails } = req.body;
-        if (!productId || !updatedDetails) {
-            res.status(400).json({ message: "productId and updatedDetails are required" });
-            return;
-        }
-        // Find product by ID
-        const product = yield product_model_1.default.findById(productId);
-        if (!product) {
-            res.status(404).json({ message: "Product not found" });
-            return;
-        }
-        // remove stock and isAvailable from updatedDetails
-        delete updatedDetails.stock;
-        delete updatedDetails.isAvailable;
-        delete updatedDetails.threshold;
-        // Update product details
-        for (const key in updatedDetails) {
-            if (key in product) {
-                product[key] = updatedDetails[key];
-            }
-        }
-        yield product.save();
-        res.status(200).json({ message: "Product details updated successfully", data: product });
-    }
-    catch (err) {
-        res.status(500).json({
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        });
-    }
-});
-exports.updateProductDetails = updateProductDetails;
-const updateProductAvailability = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { productId, isAvailable } = req.body;
-        if (!productId || isAvailable === undefined) {
-            res.status(400).json({ message: "productId and isAvailable are required" });
-            return;
-        }
-        // Find product by ID
-        const product = yield product_model_1.default.findById(productId);
-        if (!product) {
-            res.status(404).json({ message: "Product not found" });
-            return;
-        }
-        // Update availability
-        product.isAvailable = isAvailable;
-        yield product.save();
-        res.status(200).json({ message: "Availability updated successfully", data: product });
-    }
-    catch (err) {
-        res.status(500).json({
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        });
-    }
-});
-exports.updateProductAvailability = updateProductAvailability;
-const updateProductThreshold = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { productId, threshold } = req.body;
-        if (!productId || threshold === undefined) {
-            res.status(400).json({ message: "productId and threshold are required" });
-            return;
-        }
-        // return error if threshold is negative or string 
-        if (threshold < 0 || typeof threshold === "string") {
-            res.status(400).json({ message: "Threshold must be a non-negative number" });
-            return;
-        }
-        // Find product by ID
-        const product = yield product_model_1.default.findById(productId);
-        if (!product) {
-            res.status(404).json({ message: "Product not found" });
-            return;
-        }
-        // Update threshold
-        product.threshold = threshold;
-        if (product.stock < threshold) {
-            product.isAvailable = false;
-        }
-        else {
-            product.isAvailable = true;
-        }
-        yield product.save();
-        //update new cache 
-        const products = yield product_model_1.default.find({});
-        cache_1.default.set("allProducts", products);
-        res.status(200).json({ message: "Threshold updated successfully", data: product });
-        return;
-    }
-    catch (err) {
-        res.status(500).json({
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        });
-    }
-});
-exports.updateProductThreshold = updateProductThreshold;
-const createAdminUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { email, password, name } = req.body;
-        if (!email || !password || !name) {
-            res.status(400).json({ message: "email, password, and name are required" });
-            return;
-        }
-        // Check if user already exists
-        const user = yield user_model_1.default.find({
-            email: email
-        });
-        if (user.length > 0) {
-            res.status(400).json({ message: "User already exists" });
-            return;
-        }
-        // Hash password
-        const hashedPassword = yield bcryptjs_1.default.hash(password, 10);
-        // Create new user
-        const newUser = new user_model_1.default({
-            email,
-            password: hashedPassword,
-            name,
-            role: "admin"
-        });
-        yield newUser.save();
-        res.status(201).json({ message: "Admin user created successfully", data: newUser });
-    }
-    catch (err) {
-        res.status(500).json({
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        });
-    }
-});
-exports.createAdminUser = createAdminUser;
-const adminLogin = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { email, password } = req.body;
-        if (!email || !password) {
-            res.status(400).json({ message: "email and password are required" });
-            return;
-        }
-        // Find user by email
-        const user = yield user_model_1.default.findOne({ email });
-        if (!user) {
-            res.status(404).json({ message: "User not found" });
-            return;
-        }
-        // Check if user is admin
-        if (user.role !== "admin") {
-            res.status(401).json({ message: "Unauthorized: Admin access required" });
-            return;
-        }
-        // Compare passwords
-        const isMatch = yield bcryptjs_1.default.compare(password, user.password);
-        const token = yield (0, helpers_1.generateAdminToken)(user.role, user.email);
-        const valid_till = new Date(Date.now() + 1000 * 60 * 60 * 2); // 2 hours 
-        if (!isMatch) {
-            res.status(401).json({ message: "Invalid password" });
-            return;
-        }
-        const formatted_time = new Intl.DateTimeFormat('en-IN', {
-            timeZone: 'Asia/Kolkata',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true,
-        }).format(new Date());
-        const device = req.headers["user-agent"] || "Unknown device";
-        // await sendAdminLoginAlert(user.email,device,formatted_time  );
-        res.status(200).json({ message: "Admin login successful", data: {
-                name: user.name,
-                email: user.email,
-                role: user.role
-            }, token, valid_till });
-    }
-    catch (err) {
-        res.status(500).json({
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-        });
-    }
-});
-exports.adminLogin = adminLogin;
 const searchProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     try {
@@ -563,129 +346,6 @@ const deleteUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 });
 exports.deleteUser = deleteUser;
-const uploadCSV = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    if (!req.file) {
-        res.status(400).json({ message: "No file uploaded" });
-        return;
-    }
-    if (req.headers["access_token"] !== process.env.ACCESS_TOKEN) {
-        res.status(401).json({ message: "Unauthorized: Invalid Access Token" });
-        return;
-    }
-    const allowedMimeTypes = ["text/csv", "application/vnd.ms-excel"];
-    if (!allowedMimeTypes.includes(req.file.mimetype)) {
-        res.status(400).json({ message: "Invalid file type. Only CSV files are allowed." });
-        return;
-    }
-    const csvBuffer = req.file.buffer.toString("utf-8");
-    let { data } = papaparse_1.default.parse(csvBuffer, {
-        header: true,
-        skipEmptyLines: true,
-        dynamicTyping: true,
-    });
-    if (!data.length) {
-        res.status(400).json({ message: "Empty CSV file" });
-        return;
-    }
-    const session = yield mongoose_1.default.startSession();
-    session.startTransaction();
-    try {
-        const bulkOperations = [];
-        const updatedProducts = [];
-        const createdProducts = [];
-        for (const item of data) {
-            if (!item.name || !item.price)
-                continue;
-            const stock = Number(item.stock) || 0;
-            const threshold = Number(item.threshold) || 0;
-            const isAvailable = stock >= threshold;
-            const productData = {
-                name: item.name.trim(),
-                description: item.description || "No description available",
-                price: Number(item.price) || 0,
-                stock,
-                category: item.category || "Uncategorized",
-                origin: item.origin || "Unknown",
-                shelfLife: item.shelfLife || "7 days",
-                isAvailable,
-                actualPrice: Number(item.actualPrice) || Number(item.price) || 0,
-                threshold,
-                unit: item.unit || "500g",
-            };
-            if (item._id) {
-                bulkOperations.push({
-                    updateOne: {
-                        filter: { _id: item._id },
-                        update: { $set: productData },
-                        upsert: false, // Only update existing products
-                    },
-                });
-                updatedProducts.push(item.name);
-            }
-            else {
-                bulkOperations.push({ insertOne: { document: productData } });
-                createdProducts.push(item.name);
-            }
-        }
-        if (bulkOperations.length > 0) {
-            yield product_model_1.default.bulkWrite(bulkOperations, { session, ordered: false });
-        }
-        yield session.commitTransaction();
-        session.endSession();
-        res.status(200).json({
-            message: "CSV processed successfully",
-            data: { updated: updatedProducts, created: createdProducts },
-        });
-    }
-    catch (error) {
-        yield session.abortTransaction();
-        session.endSession();
-        console.error("CSV Processing Error:", error);
-        res.status(500).json({
-            message: "Internal Server Error",
-            stack: error.stack
-        });
-    }
-});
-exports.uploadCSV = uploadCSV;
-const exportProductCSV = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        // Fetch data from MongoDB
-        const products = yield product_model_1.default.find({}).lean(); // Use .lean() to get plain JSON
-        if (!products || products.length === 0) {
-            res.status(404).json({ message: "No products found" });
-            return;
-        }
-        // Define CSV fields
-        const fields = [
-            { label: "_id", value: "_id" },
-            { label: "name", value: "name" },
-            { label: "description", value: "description" },
-            { label: "price", value: "price" },
-            { label: "stock", value: "stock" },
-            { label: "category", value: "category" },
-            { label: "origin", value: "origin" },
-            { label: "shelfLife", value: "shelfLife" },
-            { label: "isAvailable", value: "isAvailable" },
-            { label: "threshold", value: "threshold" },
-            { label: "unit", value: "unit" },
-            { label: "actualPrice", value: "actualPrice" },
-        ];
-        // Convert JSON data to CSV
-        const json2csvParser = new json2csv_1.Parser({ fields });
-        const csvData = json2csvParser.parse(products);
-        // Set response headers for CSV download
-        res.setHeader("Content-Type", "text/csv");
-        res.setHeader("Content-Disposition", 'attachment; filename="products.csv"');
-        // Send CSV data
-        res.status(200).send(csvData);
-    }
-    catch (err) {
-        console.error("CSV Export Error:", err);
-        res.status(500).json({ message: "Internal Server Error" });
-    }
-});
-exports.exportProductCSV = exportProductCSV;
 const createUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email, name, phone, addresses } = req.body;
@@ -813,133 +473,6 @@ const sendNotification = (req, res) => __awaiter(void 0, void 0, void 0, functio
     }
 });
 exports.sendNotification = sendNotification;
-const updateOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { orderId, status } = req.body;
-        if (!orderId || !status) {
-            res.status(400).json({
-                message: "Order ID and status are required",
-                statusCode: 400,
-                error: "Bad Request"
-            });
-            return;
-        }
-        // Validate status
-        const validStatuses = Object.values(interface_2.OrderStatus);
-        if (!validStatuses.includes(status)) {
-            res.status(400).json({
-                message: "Invalid order status",
-                statusCode: 400,
-                error: "Bad Request"
-            });
-            return;
-        }
-        // If this is a cancellation request, use the cancellation process
-        if (status === interface_2.OrderStatus.Cancelled) {
-            yield handleOrderCancellation(orderId, res);
-            return;
-        }
-        // For other status updates, proceed normally
-        const updatedOrder = yield order_model_1.default.findOneAndUpdate({ orderId }, { status }, { new: true });
-        if (!updatedOrder) {
-            res.status(404).json({
-                message: "Order not found",
-                statusCode: 404,
-                error: "Not Found"
-            });
-            return;
-        }
-        res.status(200).json({
-            message: "Order status updated successfully",
-            statusCode: 200,
-            data: updatedOrder
-        });
-    }
-    catch (err) {
-        const internalServerErrorResponse = {
-            message: "Internal Server Error",
-            statusCode: 500,
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined
-        };
-        res.status(500).json(internalServerErrorResponse);
-    }
-});
-exports.updateOrderStatus = updateOrderStatus;
-// Helper function to handle order cancellations with transactions
-const handleOrderCancellation = (orderId, res) => __awaiter(void 0, void 0, void 0, function* () {
-    // Start a MongoDB session for transaction
-    const session = yield mongoose_1.default.startSession();
-    session.startTransaction();
-    try {
-        const order = yield order_model_1.default.findOne({ orderId }).session(session);
-        if (!order) {
-            res.status(404).json({
-                message: "Order not found",
-                statusCode: 404,
-                error: "Not Found"
-            });
-            yield session.abortTransaction();
-            session.endSession();
-            return;
-        }
-        if (order.status === interface_2.OrderStatus.Cancelled) {
-            res.status(400).json({
-                message: "Order already cancelled",
-                statusCode: 400,
-                error: "Bad Request"
-            });
-            yield session.abortTransaction();
-            session.endSession();
-            return;
-        }
-        // Restore product stock for each product in the order
-        const products = order.products;
-        for (const item of products) {
-            const product = yield product_model_1.default.findById(item.productId).session(session);
-            if (!product) {
-                res.status(404).json({
-                    message: `Product with ID ${item.productId} not found`,
-                    statusCode: 404,
-                    error: "Not Found"
-                });
-                yield session.abortTransaction();
-                session.endSession();
-                return;
-            }
-            // Increase the stock by the quantity that was ordered
-            product.stock += item.quantity;
-            yield product.save({ session });
-        }
-        // Update order status to cancelled
-        order.status = interface_2.OrderStatus.Cancelled;
-        // If payment was already made and not COD, mark for refund
-        if (!order.isCashOnDelivery && order.paymentStatus === interface_1.PaymentStatus.Paid) {
-            order.paymentStatus = interface_1.PaymentStatus.Refund;
-        }
-        yield order.save({ session });
-        // Commit the transaction
-        yield session.commitTransaction();
-        session.endSession();
-        // Send success response
-        res.status(200).json({
-            message: "Order cancelled successfully",
-            statusCode: 200,
-            data: order,
-            refundStatus: order.paymentStatus === interface_1.PaymentStatus.Refund ? "Pending" : "Not Applicable"
-        });
-    }
-    catch (err) {
-        // Abort the transaction in case of any error
-        yield session.abortTransaction();
-        session.endSession();
-        const internalServerErrorResponse = {
-            message: "Internal Server Error",
-            statusCode: 500,
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined
-        };
-        res.status(500).json(internalServerErrorResponse);
-    }
-});
 const createCouponCode = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { code, expiry, minValue, maxUsage, offValue } = req.body;
@@ -1119,3 +652,400 @@ const changeCouponStatus = (req, res) => __awaiter(void 0, void 0, void 0, funct
     }
 });
 exports.changeCouponStatus = changeCouponStatus;
+// Controller function to create a store
+const createStore = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        // Extract data from request body
+        const { name, address, phone, email, latitude, longitude, radius } = req.body;
+        // Validate required fields
+        if (!name || !address || !phone || !email || latitude === undefined || longitude === undefined) {
+            res.status(400).send({
+                message: "Name, address, phone, email, latitude, and longitude are required",
+                statusCode: 400,
+            });
+            return;
+        }
+        // Validate address subfields
+        if (!address.flatno ||
+            !address.street ||
+            !address.city ||
+            !address.state ||
+            !address.pincode) {
+            res.status(400).send({
+                message: "All address fields (flatno, street, city, state, pincode) are required",
+                statusCode: 400,
+            });
+            return;
+        }
+        // Validate email format (basic regex)
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            res.status(400).send({
+                message: "Invalid email format",
+                statusCode: 400,
+            });
+            return;
+        }
+        // Validate phone format (basic check for digits, 10-15 characters)
+        const phoneRegex = /^\d{10,15}$/;
+        if (!phoneRegex.test(phone)) {
+            res.status(400).send({
+                message: "Invalid phone number. Must be 10-15 digits",
+                statusCode: 400,
+            });
+            return;
+        }
+        // Validate radius if provided
+        if (radius !== undefined && (radius <= 0 || isNaN(radius))) {
+            res.status(400).send({
+                message: "Radius must be a positive number",
+                statusCode: 400,
+            });
+            return;
+        }
+        // Check for duplicate email
+        const existingStore = yield store_model_1.Store.findOne({ email });
+        if (existingStore) {
+            res.status(409).send({
+                message: "Email already in use",
+                statusCode: 409,
+            });
+            return;
+        }
+        // Prepare store data
+        const storeData = {
+            name: name.trim(),
+            address: {
+                flatno: address.flatno.trim(),
+                street: address.street.trim(),
+                city: address.city.trim(),
+                state: address.state.trim(),
+                pincode: address.pincode.trim(),
+            },
+            phone: phone.trim(),
+            email: email.toLowerCase(),
+            latitude,
+            longitude,
+            radius: radius !== null && radius !== void 0 ? radius : 5, // Default from schema
+            openingTime: "09-00", // Default from schema
+        };
+        // Create and save the store
+        const newStore = yield store_model_1.Store.create(storeData);
+        // Send success response
+        res.status(201).send({
+            message: "Store created successfully",
+            statusCode: 201,
+            data: newStore,
+        });
+    }
+    catch (err) {
+        // Handle unexpected errors
+        console.error("Error creating store:", err);
+        const errorResponse = {
+            message: "Internal Server Error",
+            statusCode: 500,
+            stack: err.stack,
+        };
+        res.status(500).send(errorResponse);
+    }
+});
+exports.createStore = createStore;
+const createAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        // Extract data from request body
+        const { name, email, password, role, storeId } = req.body;
+        // Validate required fields
+        if (!name || !email || !password || !role) {
+            res.status(400).json({
+                success: false,
+                message: "Name, email, password, and role are required",
+            });
+            return;
+        }
+        // Validate role
+        if (!Object.values(interface_1.AdminRole).includes(role)) {
+            res.status(400).json({
+                success: false,
+                message: `Invalid role. Must be one of: ${Object.values(interface_1.AdminRole).join(", ")}`,
+            });
+            return;
+        }
+        // For StoreManager, ensure storeId is provided and valid
+        if (role === interface_1.AdminRole.StoreManager && !storeId) {
+            res.status(400).json({
+                success: false,
+                message: "storeId is required for StoreManager role",
+            });
+            return;
+        }
+        // For SuperAdmin, ensure storeId is not provided
+        if (role === interface_1.AdminRole.SuperAdmin && storeId) {
+            res.status(400).json({
+                success: false,
+                message: "storeId should not be provided for SuperAdmin role",
+            });
+            return;
+        }
+        // Validate storeId format if provided
+        if (storeId && !mongoose_1.default.Types.ObjectId.isValid(storeId)) {
+            res.status(400).json({
+                success: false,
+                message: "Invalid storeId format",
+            });
+            return;
+        }
+        // Check if email already exists
+        const existingAdmin = yield admin_model_1.Admin.findOne({ email });
+        if (existingAdmin) {
+            res.status(409).json({
+                success: false,
+                message: "Email already in use",
+            });
+            return;
+        }
+        // Hash the password
+        const saltRounds = 10;
+        const hashedPassword = yield bcryptjs_1.default.hash(password, saltRounds);
+        // Prepare admin data
+        const adminData = {
+            name: name.trim(),
+            email: email.toLowerCase(),
+            password: hashedPassword,
+            role,
+            isActivate: false, // Default as per schema
+            isSuperAdmin: role === interface_1.AdminRole.SuperAdmin, // Set based on role
+        };
+        // Add storeId for StoreManager
+        if (role === interface_1.AdminRole.StoreManager && storeId) {
+            adminData.storeId = new mongoose_1.default.Types.ObjectId(storeId);
+        }
+        // Create and save the admin
+        const newAdmin = yield admin_model_1.Admin.create(adminData);
+        // Remove password from response
+        const _a = newAdmin.toObject(), { password: _ } = _a, adminResponse = __rest(_a, ["password"]);
+        // Send success response
+        res.status(201).json({
+            success: true,
+            message: `${role} created successfully`,
+            data: adminResponse,
+        });
+    }
+    catch (error) {
+        // Handle unexpected errors
+        console.error("Error creating admin:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while creating admin",
+            error: error.message,
+        });
+    }
+});
+exports.createAdmin = createAdmin;
+const adminLogin = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) {
+            res.status(400).json({
+                success: false,
+                message: "Email and password are required",
+            });
+            return;
+        }
+        // Check if admin exists
+        const admin = yield admin_model_1.Admin.findOne({ email }).select("+password");
+        if (!admin) {
+            res.status(401).json({
+                success: false,
+                message: "Invalid email or password",
+            });
+            return;
+        }
+        // // Check if admin is activated
+        // if (!admin.isActivate && !admin.isSuperAdmin) {
+        //     res.status(403).json({
+        //         success: false,
+        //         message: "Admin account is not activated",
+        //     });
+        //     return;
+        // }
+        // Verify password
+        const isPasswordValid = yield bcryptjs_1.default.compare(password, admin.password);
+        if (!isPasswordValid) {
+            res.status(401).json({
+                success: false,
+                message: "Invalid email or password",
+            });
+            return;
+        }
+        // Generate JWT token
+        const token = (0, helpers_1.generateAdminToken)(admin.role, admin.email);
+        // Send login alert email
+        // sendAdminLoginAlert(admin.email, admin.name);
+        // Send success response with token and user details
+        res.status(200).json({
+            success: true,
+            message: "Login successful",
+            data: {
+                token,
+                user: Object.assign(Object.assign({}, admin.toObject()), { password: undefined }),
+            },
+        });
+    }
+    catch (error) {
+        console.error("Error during admin login:", error);
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        });
+    }
+});
+exports.adminLogin = adminLogin;
+const assignStoreManager = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { adminId, storeId } = req.body;
+        // Validate required fields
+        if (!adminId || !storeId) {
+            res.status(400).json({
+                success: false,
+                message: "Admin ID and Store ID are required",
+            });
+            return;
+        }
+        // Check if admin exists
+        const admin = yield admin_model_1.Admin.findById(adminId);
+        if (!admin) {
+            res.status(404).json({
+                success: false,
+                message: "Admin not found",
+            });
+            return;
+        }
+        // Check if store exists
+        const store = yield store_model_1.Store.findById(storeId);
+        if (!store) {
+            res.status(404).json({
+                success: false,
+                message: "Store not found",
+            });
+            return;
+        }
+        // Assign store to admin
+        admin.storeId = store._id;
+        yield admin.save();
+        res.status(200).json({
+            success: true,
+            message: "Store assigned to admin successfully",
+            data: admin,
+        });
+        return;
+    }
+    catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        });
+        return;
+    }
+});
+exports.assignStoreManager = assignStoreManager;
+const getAllStores = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        // Get pagination parameters from query
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        // Validate pagination parameters
+        if (page < 1 || limit < 1) {
+            res.status(400).json({
+                success: false,
+                message: "Page and limit must be positive integers",
+            });
+            return;
+        }
+        // Calculate skip for pagination
+        const skip = (page - 1) * limit;
+        // Fetch stores with pagination
+        const stores = yield store_model_1.Store.find()
+            .select("name address phone email longitude latitude radius openingTime")
+            .skip(skip)
+            .limit(limit)
+            .lean();
+        // Get total store count for pagination metadata
+        const totalStores = yield store_model_1.Store.countDocuments();
+        // Fetch store managers for all stores
+        const storeIds = stores.map((store) => store._id);
+        const admins = yield admin_model_1.Admin.find({
+            role: interface_1.AdminRole.StoreManager,
+            storeId: { $in: storeIds },
+        })
+            .select("name email isActivate storeId")
+            .lean();
+        // Map admins to stores
+        const formattedStores = stores.map((store) => {
+            const manager = admins.find((admin) => admin.storeId && admin.storeId.toString() === store._id.toString());
+            return {
+                _id: store._id,
+                name: store.name,
+                address: store.address,
+                phone: store.phone,
+                email: store.email,
+                longitude: store.longitude,
+                latitude: store.latitude,
+                radius: store.radius,
+                openingTime: store.openingTime,
+                manager: manager
+                    ? {
+                        name: manager.name,
+                        email: manager.email,
+                    }
+                    : null, // No manager found
+            };
+        });
+        // Return paginated response
+        res.status(200).json({
+            success: true,
+            message: "Stores retrieved successfully",
+            data: {
+                stores: formattedStores,
+                pagination: {
+                    currentPage: page,
+                    limit,
+                    totalStores,
+                    totalPages: Math.ceil(totalStores / limit),
+                },
+            },
+        });
+    }
+    catch (error) {
+        console.error("Error retrieving stores:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while retrieving stores",
+            error: error.message,
+        });
+    }
+});
+exports.getAllStores = getAllStores;
+const updateStoreDetails = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { storeId, data } = req.body;
+        if (!storeId) {
+            res.status(400).json({ message: "Store ID is required" });
+            return;
+        }
+        const updatedStore = yield store_model_1.Store.findByIdAndUpdate(storeId, data, { new: true, runValidators: true });
+        if (!updatedStore) {
+            res.status(404).json({ message: "Store not found" });
+            return;
+        }
+        res.status(200).json({ message: "Store updated successfully", data: updatedStore });
+    }
+    catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.updateStoreDetails = updateStoreDetails;

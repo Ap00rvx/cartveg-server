@@ -11,6 +11,8 @@ exports.addressSchema = new mongoose_1.default.Schema({
     city: { type: String, required: true },
     state: { type: String, required: true },
     pincode: { type: String, required: true },
+    latitude: { type: Number, required: true },
+    longitude: { type: Number, required: true },
 });
 const userSchema = new mongoose_1.default.Schema({
     name: { type: String, default: "" },
@@ -19,11 +21,7 @@ const userSchema = new mongoose_1.default.Schema({
     addresses: [exports.addressSchema, { default: [] }],
     phone: { type: String, default: "" },
     dob: { type: Date },
-    role: { type: String, enum: ["user", "admin"], default: "user" },
     isActivate: { type: Boolean, default: false },
-    password: { type: String, default: "", required: function () {
-            return this.role === "admin";
-        } },
     orders: {
         type: [String], //list of string
         default: [],

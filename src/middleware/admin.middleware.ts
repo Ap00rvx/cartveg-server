@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import User from "../models/user.model";
+import { Admin } from "../models/admin.model";
 
 interface DecodedToken extends JwtPayload {
   role?: string;
@@ -25,9 +26,9 @@ export const adminMiddleware = async (req: Request, res: Response, next: NextFun
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as DecodedToken;
 
-    const user = await User.findOne({ email: decoded.email });
+    const admin = await Admin.findOne({ email: decoded.email });
 
-    if (!user || user.role !== "admin") {
+    if (!admin || admin.role !== "superadmin") {
       res.status(401).json({ msg: "Unauthorized: Admin access required" });
       return;}
       

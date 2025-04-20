@@ -14,6 +14,10 @@ import orderRoutes from './routes/order.routes';
 import admin from "firebase-admin"; 
 import cartRoutes from "./routes/cart.routes";
 import couponRoutes from "./routes/coupon.routes"; 
+import inventoryRoutes from "./routes/inventory.routes";
+import categoryRoutes from "./routes/category.routes";
+
+
 const serviceAccount = require(__dirname + "/service_account.json");
 
 admin.initializeApp({
@@ -40,6 +44,8 @@ app.use('/common', commonRoutes);
 app.use('/order', orderRoutes);
 app.use('/cart', cartRoutes);
 app.use('/coupon', couponRoutes);
+app.use("/inventory", inventoryRoutes);
+app.use('/category', categoryRoutes);
 
 (async()=>{
     try {

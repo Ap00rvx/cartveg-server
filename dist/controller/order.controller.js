@@ -12,342 +12,460 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cancelOrder = exports.getOrderById = exports.getUserOrders = exports.createOrder = void 0;
-const order_model_1 = __importDefault(require("../models/order.model"));
-const interface_1 = require("../types/interface/interface");
 const mongoose_1 = __importDefault(require("mongoose"));
-const product_model_1 = __importDefault(require("../models/product.model"));
-const user_model_1 = __importDefault(require("../models/user.model"));
+const order_model_1 = __importDefault(require("../models/order.model"));
+const store_model_1 = require("../models/store.model");
+const inventory_model_1 = require("../models/inventory.model");
 const invoice_model_1 = __importDefault(require("../models/invoice.model"));
+const user_model_1 = __importDefault(require("../models/user.model"));
 const coupon_model_1 = __importDefault(require("../models/coupon.model"));
-const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { userId, products, isCashOnDelivery, deliveryAddress, phone, shippingAmount, appliedCoupon, // Optional field
-         } = req.body;
-        // Validate required fields
-        if (!userId || !products || !deliveryAddress || !phone || !shippingAmount) {
-            const errorResponse = {
-                message: "Missing required fields",
-                statusCode: 400,
-                error: "Bad Request",
-            };
-            res.status(400).json(errorResponse);
-            return;
+const interface_1 = require("../types/interface/interface");
+// Assuming Product model exists
+const product_model_1 = __importDefault(require("../models/product.model"));
+const calculateOrderTotals = (products, session) => __awaiter(void 0, void 0, void 0, function* () {
+    let totalAmount = 0;
+    let totalItems = 0;
+    const itemsForInvoice = [];
+    for (const item of products) {
+        const product = yield product_model_1.default.findById(item.productId).session(session);
+        if (!product) {
+            throw new Error(`Product with ID ${item.productId} not found`);
         }
-        if (phone.length !== 10) {
-            const errorResponse = {
-                message: "Invalid phone number",
-                statusCode: 400,
-                error: "Bad Request",
-            };
-            res.status(400).json(errorResponse);
-            return;
-        }
-        // Generate unique orderId
-        const orderId = `ORD-${new Date().getTime()}`;
-        // Start a transaction session
-        const session = yield mongoose_1.default.startSession();
-        session.startTransaction();
-        let totalAmount = 0;
-        let totalItems = 0;
-        let discountAmount = 0;
-        let coupon = null;
-        try {
-            // Update product stock and calculate subtotal
-            for (const item of products) {
-                const product = yield product_model_1.default.findById(item.productId).session(session);
-                if (!product)
-                    throw new Error(`Product not found: ${item.productId}`);
-                if (product.isAvailable === false)
-                    throw new Error(`Product is not available: ${product.name}`);
-                if (product.stock < item.quantity)
-                    throw new Error(`Insufficient stock for ${product.name}`);
-                product.stock -= item.quantity;
-                totalAmount += product.price * item.quantity;
-                totalItems += item.quantity;
-                if (product.stock <= product.threshold) {
-                    product.isAvailable = false;
-                }
-                yield product.save({ session });
-            }
-            // Handle appliedCoupon if provided
-            if (appliedCoupon) {
-                const { couponId, code, discountAmount: appliedDiscount } = appliedCoupon;
-                if (!couponId || !code || appliedDiscount === undefined) {
-                    throw new Error("Invalid coupon data: couponId, code, and discountAmount are required if appliedCoupon is provided");
-                }
-                // Here you might want to validate the coupon (e.g., check if it exists and is valid)
-                // For simplicity, assuming it's valid if provided
-                coupon = yield coupon_model_1.default.findOne({
-                    couponCode: code,
-                    id: couponId,
-                }).session(session);
-                if (!coupon) {
-                    throw new Error(`Coupon not found: ${code}`);
-                }
-                discountAmount = appliedDiscount;
-                totalAmount -= discountAmount; // Apply discount to total
-                if (totalAmount < 0)
-                    totalAmount = 0; // Ensure total doesn't go negative
-            }
-            const invoiceId = `INV-${orderId}`;
-            totalAmount += shippingAmount; // Add shipping after discount
-            // Create new order
-            const orderDate = new Date();
-            const newOrder = new order_model_1.default({
-                orderId,
-                userId: userId,
-                products,
-                orderDate,
-                expectedDeliveryDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // Current date + 2 days
-                totalAmount,
-                shippingAmount,
-                totalItems,
-                status: interface_1.OrderStatus.Placed,
-                isCashOnDelivery,
-                deliveryAddress,
-                invoiceId: invoiceId,
-                paymentStatus: isCashOnDelivery ? interface_1.PaymentStatus.Pending : interface_1.PaymentStatus.Paid,
-                rzpOrderId: isCashOnDelivery ? undefined : "",
-                rzpPaymentId: isCashOnDelivery ? undefined : "",
-                appliedCoupon: appliedCoupon ? {
-                    couponId: appliedCoupon.couponId,
-                    code: appliedCoupon.code,
-                    discountAmount: discountAmount,
-                } : undefined, // Include appliedCoupon only if provided
-            });
-            yield newOrder.save({ session });
-            // Update user order history
-            const user = yield user_model_1.default.findById(userId).session(session);
-            if (!user)
-                throw new Error("User not found");
-            user.orders = user.orders || [];
-            user.orders.push(newOrder.orderId);
-            yield user.save({ session });
-            // Create invoice
-            const invoiceData = {
-                invoiceId,
-                orderId,
-                userDetails: {
-                    name: user.name,
-                    email: user.email,
-                    phone: phone,
-                },
-                totalAmount: totalAmount,
-                paymentStatus: isCashOnDelivery ? interface_1.PaymentStatus.Pending : interface_1.PaymentStatus.Paid,
-                billingAddress: deliveryAddress,
-                shippingAddress: deliveryAddress,
-                orderDate,
-                items: yield Promise.all(products.map((product) => __awaiter(void 0, void 0, void 0, function* () {
-                    const productDetails = yield product_model_1.default.findById(product.productId).select("name price").lean();
-                    return {
-                        name: (productDetails === null || productDetails === void 0 ? void 0 : productDetails.name) || "Unknown Product",
-                        quantity: product.quantity,
-                        price: (productDetails === null || productDetails === void 0 ? void 0 : productDetails.price) || 0,
-                    };
-                }))),
-                paymentMode: isCashOnDelivery ? "Cash on Delivery" : "Online Payment",
-                discountAmount: discountAmount > 0 ? discountAmount : undefined, // Include discount in invoice if applied
-            };
-            const newInvoice = new invoice_model_1.default(invoiceData);
-            yield newInvoice.save({ session });
-            // Commit transaction
-            yield session.commitTransaction();
-            session.endSession();
-            const successResponse = {
-                statusCode: 201,
-                message: "Order created successfully",
-                data: newOrder,
-            };
-            res.status(201).json(successResponse);
-            return;
-        }
-        catch (error) {
-            yield session.abortTransaction();
-            session.endSession();
-            // If a coupon was applied, remove the user from the coupon's usedUsers array
-            if (appliedCoupon && coupon) {
-                try {
-                    yield coupon_model_1.default.updateOne({ _id: appliedCoupon.couponId }, { $pull: { usedUsers: userId } });
-                    console.log(`Removed user ${userId} from coupon ${appliedCoupon.code} usedUsers list due to order failure`);
-                }
-                catch (couponError) {
-                    console.error("Error removing user from coupon usedUsers:", couponError);
-                }
-            }
-            throw error;
-        }
-    }
-    catch (error) {
-        console.error("Error creating order:", error);
-        res.status(500).json({
-            message: error.message,
-            statusCode: 500,
-            res: `Creation of order failed due to ${error.message} && Removed user from coupon  usedUsers list due to order failure`,
+        totalAmount += product.price * item.quantity;
+        totalItems += item.quantity;
+        itemsForInvoice.push({
+            name: product.name,
+            quantity: item.quantity,
+            price: product.price,
         });
     }
+    return { totalAmount, totalItems, itemsForInvoice };
 });
-exports.createOrder = createOrder;
-const getUserOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const userId = req.query.userId;
-        if (!userId) {
-            const errorResponse = {
-                message: "Missing required fields",
-                statusCode: 400,
-                error: "Bad Request",
-            };
-            res.status(400).json(errorResponse);
-            return;
-        }
-        const orders = yield order_model_1.default.find({ userId }).sort({ orderDate: -1 }).populate({
-            path: "products.productId", // Populate product details inside the array
-            model: "Product", // Ensure it's referring to the correct model
-            select: "name price image category", // Select relevant fields
-        });
-        const successResponse = {
-            statusCode: 200,
-            message: "User orders fetched successfully",
-            data: orders,
-        };
-        res.status(200).json(successResponse);
-    }
-    catch (error) {
-        console.error("Error fetching user orders:", error);
-        res.status(500).json({
-            message: error.message,
-            statusCode: 500,
-            res: `Fetching of user orders failed due to ${error.message}`
-        });
-    }
-});
-exports.getUserOrders = getUserOrders;
-const getOrderById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const orderId = req.query.orderId;
-        if (!orderId) {
-            const errorResponse = {
-                message: "Missing required fields",
-                statusCode: 400,
-                error: "Bad Request",
-            };
-            res.status(400).json(errorResponse);
-            return;
-        }
-        const order = yield order_model_1.default.findOne({ orderId });
-        if (!order) {
-            const errorResponse = {
-                message: "Order not found",
-                statusCode: 404,
-                error: "Not Found",
-            };
-            res.status(404).json(errorResponse);
-            return;
-        }
-        const successResponse = {
-            statusCode: 200,
-            message: "Order fetched successfully",
-            data: order,
-        };
-        res.status(200).json(successResponse);
-    }
-    catch (error) {
-        console.error("Error fetching order:", error);
-        res.status(500).json({
-            message: error.message,
-            statusCode: 500,
-            res: `Fetching of order failed due to ${error.message}`
-        });
-    }
-});
-exports.getOrderById = getOrderById;
-const cancelOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    // Start a MongoDB session for transaction
-    const session = yield mongoose_1.default.startSession();
-    session.startTransaction();
-    try {
-        const { orderId } = req.body;
-        if (!orderId) {
-            const errorResponse = {
-                message: "Missing required fields",
-                statusCode: 400,
-                error: "Bad Request",
-            };
-            res.status(400).json(errorResponse);
-            return;
-        }
-        const order = yield order_model_1.default.findOne({ orderId }).session(session);
-        if (!order) {
-            const errorResponse = {
-                message: "Order not found",
-                statusCode: 404,
-                error: "Not Found",
-            };
-            res.status(404).json(errorResponse);
-            yield session.abortTransaction();
-            session.endSession();
-            return;
-        }
-        if (order.status === interface_1.OrderStatus.Cancelled) {
-            const errorResponse = {
-                message: "Order already cancelled",
-                statusCode: 400,
-                error: "Bad Request",
-            };
-            res.status(400).json(errorResponse);
-            yield session.abortTransaction();
-            session.endSession();
-            return;
-        }
-        // Restore product stock for each product in the order
-        const products = order.products;
-        for (const item of products) {
-            const product = yield product_model_1.default.findById(item.productId).session(session);
-            if (!product) {
-                const errorResponse = {
-                    message: `Product with ID ${item.productId} not found`,
-                    statusCode: 404,
-                    error: "Not Found",
+// Order Controller
+class OrderController {
+    // Create a new order (Transaction-based)
+    createOrder(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const session = yield mongoose_1.default.startSession();
+            session.startTransaction();
+            const { userId, products, storeId, isCashOnDelivery, deliveryAddress, appliedCoupon, } = req.body;
+            try {
+                // Validate required fields
+                if (!userId || !products || !products.length || !storeId || !deliveryAddress || isCashOnDelivery === undefined) {
+                    throw new Error("Missing required fields: userId, products, storeId, deliveryAddress, isCashOnDelivery");
+                }
+                // Validate userId
+                if (!mongoose_1.default.Types.ObjectId.isValid(userId)) {
+                    throw new Error("Invalid user ID");
+                }
+                // Fetch user details from User model
+                const user = yield user_model_1.default.findById(userId).session(session);
+                if (!user) {
+                    throw new Error("User not found");
+                }
+                // Validate store exists
+                const store = yield store_model_1.Store.findById(storeId).session(session);
+                if (!store) {
+                    throw new Error("Store not found");
+                }
+                // Validate inventory
+                const inventory = yield inventory_model_1.Inventory.findOne({ storeId }).session(session);
+                if (!inventory) {
+                    throw new Error("Inventory not found for this store");
+                }
+                for (const item of products) {
+                    if (!item.productId || !item.quantity || item.quantity < 1) {
+                        throw new Error("Invalid product details: productId and quantity are required");
+                    }
+                    const inventoryProduct = inventory.products.find((p) => p.productId.toString() === item.productId.toString());
+                    if (!inventoryProduct) {
+                        throw new Error(`Product ${item.productId} not found in store inventory`);
+                    }
+                    if (inventoryProduct.quantity < item.quantity || !inventoryProduct.availability) {
+                        throw new Error(`Insufficient stock for product ${item.productId}`);
+                    }
+                }
+                // Calculate totals
+                const { totalAmount, totalItems, itemsForInvoice } = yield calculateOrderTotals(products, session);
+                // Apply coupon discount if provided
+                let discountAmount = 0;
+                let coupon = null;
+                if (appliedCoupon && appliedCoupon.couponId) {
+                    coupon = yield coupon_model_1.default.findById(appliedCoupon.couponId).session(session);
+                    if (!coupon) {
+                        throw new Error("Coupon not found");
+                    }
+                    // Validate coupon
+                    if (!coupon.isActive) {
+                        throw new Error("Coupon is not active");
+                    }
+                    if (coupon.isDeleted) {
+                        throw new Error("Coupon is deleted");
+                    }
+                    if (coupon.expiry < new Date()) {
+                        throw new Error("Coupon has expired");
+                    }
+                    if (coupon.usedUsers.length >= coupon.maxUsage) {
+                        throw new Error("Coupon has reached maximum usage");
+                    }
+                    if (totalAmount < coupon.minValue) {
+                        throw new Error(`Order total (${totalAmount}) is less than minimum value (${coupon.minValue}) for coupon`);
+                    }
+                    if (coupon.usedUsers.includes(userId)) {
+                        throw new Error("Coupon already used by this user");
+                    }
+                    // Use offValue as discount amount
+                    discountAmount = coupon.offValue;
+                    if (discountAmount > totalAmount) {
+                        throw new Error("Discount amount exceeds total amount");
+                    }
+                    // Update coupon: add userId to usedUsers
+                    coupon.usedUsers.push(userId);
+                    yield coupon.save({ session });
+                }
+                // Generate orderId and invoiceId
+                const timestamp = Date.now();
+                const orderId = `ORD-${timestamp}`;
+                const invoiceId = `INV-ORD-${timestamp}`;
+                // Create order
+                const orderData = {
+                    orderId,
+                    userId: new mongoose_1.default.Types.ObjectId(userId),
+                    products,
+                    storeId: new mongoose_1.default.Types.ObjectId(storeId),
+                    totalAmount: totalAmount - discountAmount,
+                    shippingAmount: 50, // Example fixed shipping amount
+                    totalItems,
+                    isCashOnDelivery,
+                    deliveryAddress,
+                    invoiceId,
+                    appliedCoupon: appliedCoupon
+                        ? {
+                            couponId: appliedCoupon.couponId,
+                            code: coupon ? coupon.couponCode : appliedCoupon.code,
+                            discountAmount,
+                        }
+                        : undefined,
+                    status: interface_1.OrderStatus.Placed,
+                    paymentStatus: isCashOnDelivery ? interface_1.PaymentStatus.Pending : interface_1.PaymentStatus.Pending,
+                    rzpOrderId: isCashOnDelivery ? undefined : `RZP-${timestamp}`,
+                    rzpPaymentId: isCashOnDelivery ? undefined : undefined,
+                    orderDate: new Date(),
+                    expectedDeliveryDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
                 };
-                res.status(404).json(errorResponse);
-                yield session.abortTransaction();
-                session.endSession();
-                return;
+                const order = new order_model_1.default(orderData);
+                yield order.save({ session });
+                // Update user orders
+                if (!user.orders) {
+                    user.orders = [];
+                }
+                user.orders.push(orderId);
+                yield user.save({ session });
+                // Update inventory
+                for (const item of products) {
+                    const inventoryProduct = inventory.products.find((p) => p.productId.toString() === item.productId.toString());
+                    if (inventoryProduct) {
+                        inventoryProduct.quantity -= item.quantity;
+                        inventoryProduct.availability = inventoryProduct.quantity > 0;
+                    }
+                }
+                yield inventory.save({ session });
+                // Create invoice
+                const invoiceData = {
+                    invoiceId,
+                    orderId,
+                    userDetails: {
+                        name: user.name,
+                        email: user.email,
+                        phone: user.phone,
+                    },
+                    totalAmount: totalAmount - discountAmount,
+                    paymentStatus: isCashOnDelivery ? interface_1.PaymentStatus.Pending : interface_1.PaymentStatus.Pending,
+                    shippingAmount: 50,
+                    discount: discountAmount,
+                    billingAddress: deliveryAddress,
+                    shippingAddress: deliveryAddress,
+                    orderDate: new Date(),
+                    items: itemsForInvoice,
+                    paymentMode: isCashOnDelivery ? "Cash on Delivery" : "Online Payment",
+                };
+                const invoice = new invoice_model_1.default(invoiceData);
+                yield invoice.save({ session });
+                yield session.commitTransaction();
+                res.status(201).json({
+                    success: true,
+                    data: { order, invoice },
+                    message: "Order and invoice created successfully",
+                });
             }
-            // Increase the stock by the quantity that was ordered
-            product.stock += item.quantity;
-            yield product.save({ session });
-        }
-        // Update order status to cancelled
-        order.status = interface_1.OrderStatus.Cancelled;
-        // If payment was already made and not COD, mark for refund or track refund status
-        if (!order.isCashOnDelivery && order.paymentStatus === interface_1.PaymentStatus.Paid) {
-            order.paymentStatus = interface_1.PaymentStatus.Refund;
-            // Additional refund logic could be implemented here
-        }
-        yield order.save({ session });
-        // Commit the transaction
-        yield session.commitTransaction();
-        session.endSession();
-        // Send success response
-        const successResponse = {
-            message: "Order cancelled successfully",
-            statusCode: 200,
-            orderId: order.orderId,
-            refundStatus: order.paymentStatus === interface_1.PaymentStatus.Refund ? "Pending" : "Not Applicable"
-        };
-        res.status(200).json(successResponse);
+            catch (error) {
+                // Revert coupon usedUsers if coupon was applied
+                if (appliedCoupon && appliedCoupon.couponId) {
+                    const coupon = yield coupon_model_1.default.findById(appliedCoupon.couponId).session(session);
+                    if (coupon && coupon.usedUsers.includes(userId)) {
+                        coupon.usedUsers = coupon.usedUsers.filter((id) => id !== userId);
+                        yield coupon.save({ session });
+                    }
+                }
+                yield session.abortTransaction();
+                res.status(400).json({
+                    success: false,
+                    message: error.message || "Failed to create order",
+                });
+            }
+            finally {
+                session.endSession();
+            }
+        });
     }
-    catch (err) {
-        // Abort the transaction in case of any error
-        yield session.abortTransaction();
-        session.endSession();
-        const internalServerErrorResponse = {
-            message: "Internal Server Error",
-            statusCode: 500,
-            stack: err.stack
-        };
-        res.status(500).send(internalServerErrorResponse);
+    // Cancel an order (Transaction-based)
+    cancelOrder(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const session = yield mongoose_1.default.startSession();
+            session.startTransaction();
+            try {
+                const { orderId } = req.params;
+                // Find order
+                const order = yield order_model_1.default.findOne({ orderId }).session(session);
+                if (!order) {
+                    throw new Error("Order not found");
+                }
+                // Check if order can be canceled
+                if (order.status !== interface_1.OrderStatus.Placed) {
+                    throw new Error(`Order cannot be canceled in ${order.status} status`);
+                }
+                // Restore inventory
+                const inventory = yield inventory_model_1.Inventory.findOne({ storeId: order.storeId }).session(session);
+                if (!inventory) {
+                    throw new Error("Inventory not found for this store");
+                }
+                for (const item of order.products) {
+                    const inventoryProduct = inventory.products.find((p) => p.productId.toString() === item.productId.toString());
+                    if (inventoryProduct) {
+                        inventoryProduct.quantity += item.quantity;
+                        inventoryProduct.availability = inventoryProduct.quantity > 0;
+                    }
+                    else {
+                        throw new Error(`Product ${item.productId} not found in inventory`);
+                    }
+                }
+                yield inventory.save({ session });
+                // Update order status
+                order.status = interface_1.OrderStatus.Cancelled;
+                order.paymentStatus = interface_1.PaymentStatus.Cancelled;
+                yield order.save({ session });
+                // Update invoice
+                const invoice = yield invoice_model_1.default.findOne({ orderId }).session(session);
+                if (invoice) {
+                    invoice.paymentStatus = interface_1.PaymentStatus.Cancelled;
+                    yield invoice.save({ session });
+                }
+                else {
+                    throw new Error("Invoice not found for this order");
+                }
+                yield session.commitTransaction();
+                res.status(200).json({
+                    success: true,
+                    data: order,
+                    message: "Order canceled successfully",
+                });
+            }
+            catch (error) {
+                yield session.abortTransaction();
+                res.status(400).json({
+                    success: false,
+                    message: error.message || "Failed to cancel order",
+                });
+            }
+            finally {
+                session.endSession();
+            }
+        });
     }
-});
-exports.cancelOrder = cancelOrder;
+    // Update order status (Transaction-based)
+    updateOrderStatus(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const session = yield mongoose_1.default.startSession();
+            session.startTransaction();
+            try {
+                const { orderId } = req.params;
+                const { status } = req.body;
+                // Validate status
+                if (!Object.values(interface_1.OrderStatus).includes(status)) {
+                    throw new Error(`Invalid order status: ${status}`);
+                }
+                // Find order
+                const order = yield order_model_1.default.findOne({ orderId }).session(session);
+                if (!order) {
+                    throw new Error("Order not found");
+                }
+                // Validate status transition
+                const validTransitions = {
+                    [interface_1.OrderStatus.Placed]: [interface_1.OrderStatus.Confirmed, interface_1.OrderStatus.Cancelled],
+                    [interface_1.OrderStatus.Confirmed]: [interface_1.OrderStatus.Shipped],
+                    [interface_1.OrderStatus.Shipped]: [interface_1.OrderStatus.Delivered],
+                    [interface_1.OrderStatus.Delivered]: [],
+                    [interface_1.OrderStatus.Cancelled]: [],
+                };
+                if (!validTransitions[order.status].includes(status)) {
+                    throw new Error(`Cannot transition from ${order.status} to ${status}`);
+                }
+                // If status is Cancelled, restock inventory
+                if (status === interface_1.OrderStatus.Cancelled) {
+                    const inventory = yield inventory_model_1.Inventory.findOne({ storeId: order.storeId }).session(session);
+                    if (!inventory) {
+                        throw new Error("Inventory not found for this store");
+                    }
+                    for (const item of order.products) {
+                        const inventoryProduct = inventory.products.find((p) => p.productId.toString() === item.productId.toString());
+                        if (inventoryProduct) {
+                            inventoryProduct.quantity += item.quantity;
+                            inventoryProduct.availability = inventoryProduct.quantity > 0;
+                        }
+                        else {
+                            throw new Error(`Product ${item.productId} not found in inventory`);
+                        }
+                    }
+                    yield inventory.save({ session });
+                }
+                // Update order status and payment status
+                order.status = status;
+                if (status === interface_1.OrderStatus.Delivered && !order.isCashOnDelivery) {
+                    order.paymentStatus = interface_1.PaymentStatus.Paid;
+                }
+                else if (status === interface_1.OrderStatus.Cancelled) {
+                    order.paymentStatus = interface_1.PaymentStatus.Cancelled;
+                }
+                yield order.save({ session });
+                // Update invoice payment status
+                const invoice = yield invoice_model_1.default.findOne({ orderId }).session(session);
+                if (invoice) {
+                    if (status === interface_1.OrderStatus.Delivered && !order.isCashOnDelivery) {
+                        invoice.paymentStatus = interface_1.PaymentStatus.Paid;
+                    }
+                    else if (status === interface_1.OrderStatus.Cancelled) {
+                        invoice.paymentStatus = interface_1.PaymentStatus.Cancelled;
+                    }
+                    yield invoice.save({ session });
+                }
+                else {
+                    throw new Error("Invoice not found for this order");
+                }
+                yield session.commitTransaction();
+                res.status(200).json({
+                    success: true,
+                    data: order,
+                    message: "Order status updated successfully",
+                });
+            }
+            catch (error) {
+                yield session.abortTransaction();
+                res.status(400).json({
+                    success: false,
+                    message: error.message || "Failed to update order status",
+                });
+            }
+            finally {
+                session.endSession();
+            }
+        });
+    }
+    // Get order by ID (Transaction-based)
+    getOrderById(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const session = yield mongoose_1.default.startSession();
+            session.startTransaction();
+            try {
+                const { orderId } = req.params;
+                // Validate orderId
+                if (!orderId) {
+                    throw new Error("Order ID is required");
+                }
+                // Find order with populated fields
+                const order = yield order_model_1.default.find({ orderId })
+                    .populate({
+                    path: "products.productId",
+                    select: "name price unit",
+                    model: "Product",
+                })
+                    .populate({
+                    path: "storeId",
+                    model: "Store",
+                    select: "name address longitude latitude radius",
+                })
+                    .populate({
+                    path: "userId",
+                    select: "name email",
+                })
+                    .session(session);
+                if (!order) {
+                    throw new Error("Order not found");
+                }
+                yield session.commitTransaction();
+                res.status(200).json({
+                    success: true,
+                    data: order,
+                    message: "Order fetched successfully",
+                });
+            }
+            catch (error) {
+                yield session.abortTransaction();
+                res.status(400).json({
+                    success: false,
+                    message: error.message || "Failed to fetch order",
+                });
+            }
+            finally {
+                session.endSession();
+            }
+        });
+    }
+    // Get all orders for a user (Transaction-based)
+    getUserOrders(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const session = yield mongoose_1.default.startSession();
+            session.startTransaction();
+            try {
+                const { userId } = req.params;
+                // Validate userId
+                if (!mongoose_1.default.Types.ObjectId.isValid(userId)) {
+                    throw new Error("Invalid user ID");
+                }
+                // Find all orders for the user with populated fields
+                const orders = yield order_model_1.default.find({ userId: new mongoose_1.default.Types.ObjectId(userId) })
+                    .populate({
+                    path: "products.productId",
+                    select: "name price unit",
+                    model: "Product",
+                })
+                    .populate({
+                    path: "storeId",
+                    model: "Store",
+                    select: "name address longitude latitude radius",
+                })
+                    .populate({
+                    path: "userId",
+                    select: "name email",
+                })
+                    .session(session);
+                yield session.commitTransaction();
+                res.status(200).json({
+                    success: true,
+                    message: orders.length > 0 ? "Orders fetched successfully" : "No orders found for this user",
+                    orders,
+                });
+            }
+            catch (error) {
+                yield session.abortTransaction();
+                res.status(400).json({
+                    success: false,
+                    message: error.message || "Failed to fetch user orders",
+                });
+            }
+            finally {
+                session.endSession();
+            }
+        });
+    }
+}
+exports.default = new OrderController();
