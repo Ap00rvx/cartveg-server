@@ -181,6 +181,88 @@ export const getProductsByLocation = async (req: Request, res: Response): Promis
   }
 };
 
+export const getStoreDetailsWithLatlong = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get query parameters
+    const latitude = parseFloat(req.query.latitude as string);
+    const longitude = parseFloat(req.query.longitude as string);
+
+    // Validate latitude and longitude
+    if (isNaN(latitude) || isNaN(longitude)) {
+      res.status(400).json({
+        success: false,
+        message: "Valid latitude and longitude are required",
+      });
+      return;
+    }
+
+    // Fetch all stores
+    const stores = await Store.find()
+      .select("name address phone email latitude longitude radius openingTime")
+      .lean();
+
+    if (!stores || stores.length === 0) {
+      res.status(404).json({
+        success: false,
+        message: "No stores found",
+      });
+      return;
+    }
+
+    // Find the nearest store within its radius
+    let nearestStore: any = null;
+    let minDistance = Infinity;
+
+    for (const store of stores) {
+      const distance = haversineDistance(latitude, longitude, store.latitude, store.longitude);
+      console.log(`Distance to store ${store.name}: ${distance} km`);
+      if (distance <= store.radius && distance < minDistance) {
+        minDistance = distance;
+        nearestStore = store;
+      }
+    }
+
+    if (!nearestStore) {
+      res.status(404).json({
+        success: false,
+        message: "No stores found within their service radius",
+      });
+      return;
+    }
+
+    // Calculate average delivery time based on distance (assuming 5 minutes per km)
+    const deliveryTime = Math.round(minDistance * 5);
+
+    // Return response with store details
+    res.status(200).json({
+      success: true,
+      message: "Nearest store details retrieved successfully",
+      data: {
+        store: {
+          _id: nearestStore._id,
+          name: nearestStore.name,
+          address: nearestStore.address,
+          phone: nearestStore.phone,
+          email: nearestStore.email,
+          latitude: nearestStore.latitude,
+          longitude: nearestStore.longitude,
+          radius: nearestStore.radius,
+          openingTime: nearestStore.openingTime,
+        },
+        deliveryTime: `${deliveryTime} minutes`,
+        distance: minDistance.toFixed(2), // Distance in kilometers
+      },
+    });
+  } catch (error: any) {
+    console.error("Error fetching store details by location:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching store details",
+      error: error.message,
+    });
+  }
+}
+
 // Controller to get  products by store ID without pagination
 export const getAllProductsWithAvailability = async (req: Request, res: Response): Promise<void> => {
     try {
