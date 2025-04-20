@@ -46,6 +46,7 @@ export enum OrderStatus {
     Shipped = "shipped",
     Delivered = "delivered",
     Cancelled = "cancelled",
+    Confirmed = "Confirmed",
 }
 
 export enum PaymentStatus {
