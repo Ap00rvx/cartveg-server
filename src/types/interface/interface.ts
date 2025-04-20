@@ -28,6 +28,7 @@ export interface IStore {
     latitude: number;
     radius: number;
     openingTime: string;  
+    isOpen: boolean;
     
 }
 export interface INotification {

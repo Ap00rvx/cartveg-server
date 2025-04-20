@@ -3,8 +3,8 @@ import mongoose from "mongoose";
 import { Inventory } from "../models/inventory.model"; // Adjust path to your Inventory model
 import { Store } from "../models/store.model"; // Adjust path to your Store model
 import  Product  from "../models/product.model"; // Adjust path to your Product model (assumed)
-import { IProduct } from "../types/interface/interface";
-
+import { IProduct, OrderStatus } from "../types/interface/interface";
+import Order from "../models/order.model";
 // Interface for product entry in the list
 interface ProductEntry {
   productId: string;
@@ -456,4 +456,166 @@ export const getProductById = async (req: Request, res: Response): Promise<void>
     });
   }
 };
+export const getStoreOrder = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const storeId = req.query.storeId as string;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
 
+    // Validate storeId
+    if (!storeId) {
+      res.status(400).json({
+        success: false,
+        message: "storeId is required",
+      });
+      return;
+    }
+
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(storeId)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid storeId format",
+      });
+      return;
+    }
+
+    // Fetch orders for the store with pagination
+    const orders = await Order.find({
+      storeId: new mongoose.Types.ObjectId(storeId),
+    })
+      .populate("products.productId", "name description unit category origin shelfLife image price actualPrice",   "Product")
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Get total order count for the store
+    const totalOrders = await Order.countDocuments({
+      storeId: new mongoose.Types.ObjectId(storeId),
+    });
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalOrders / limit);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        orders,
+        totalOrders,
+        currentPage: page,
+        totalPages,
+      },
+    });
+  } catch (err: any) {
+    console.error("Error retrieving store orders:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server error while retrieving store orders",
+      error: err.message,
+    });
+  }
+};// Adjust path to your Order model
+
+export const changeOrderStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { orderId, newStatus,storeId } = req.body;
+
+    // Validate inputs
+    if (!orderId || !newStatus || !storeId) {
+      res.status(400).json({
+        success: false,
+        message: "orderId and newStatus and storeId  are required",
+      });
+      return;
+    }
+
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(storeId)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid StoreiD format",
+      });
+      return;
+    }
+
+    // Validate newStatus
+    const validStatuses = Object.values(OrderStatus);
+    if (!validStatuses.includes(newStatus)) {
+      res.status(400).json({
+        success: false,
+        message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      });
+      return;
+    }
+
+    // Find the order
+    const order = await Order.findOne({
+      orderId,
+      storeId: new mongoose.Types.ObjectId(storeId),
+    });
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+      return;
+    }
+
+    // Check if order is already cancelled
+    if (order.status === OrderStatus.Cancelled) {
+      res.status(400).json({
+        success: false,
+        message: "Cannot change status of a cancelled order",
+      });
+      return;
+    }
+
+    // Define allowed status transitions
+    const allowedTransitions: { [key in OrderStatus]: OrderStatus[] } = {
+      [OrderStatus.Placed]: [
+        OrderStatus.Confirmed,
+        OrderStatus.Shipped,
+        OrderStatus.Cancelled,
+      ],
+      [OrderStatus.Confirmed]: [OrderStatus.Shipped, OrderStatus.Cancelled],
+      [OrderStatus.Shipped]: [OrderStatus.Delivered, OrderStatus.Cancelled],
+      [OrderStatus.Delivered]: [OrderStatus.Cancelled], // Optional, can be [] if no transitions
+      [OrderStatus.Cancelled]: [],
+    };
+
+    // Validate status transition
+    if (!allowedTransitions[order.status].includes(newStatus)) {
+      res.status(400).json({
+        success: false,
+        message: `Invalid status transition from ${order.status} to ${newStatus}`,
+      });
+      return;
+    }
+
+    // Update the order status
+    order.status = newStatus;
+    await order.save();
+
+    // Populate product details for response
+    const updatedOrder = await Order.findOne({
+      orderId,
+      storeId
+    })
+      .populate("products.productId", "name description unit category origin shelfLife image price actualPrice","Product")
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      message: `Order status updated to ${newStatus}`,
+      data: updatedOrder,
+    });
+  } catch (err: any) {
+    console.error("Error updating order status:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server error while updating order status",
+      error: err.message,
+    });
+  }
+};

@@ -38,6 +38,11 @@ const storeSchema = new mongoose.Schema<IStore>({
         type:Number,
         default : 5
     },
+    isOpen:{
+        type:Boolean,
+        default :true,
+        required : true
+    },
     openingTime:{
         type:String,
         default : "09-00"

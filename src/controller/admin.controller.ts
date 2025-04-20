@@ -18,6 +18,7 @@ import Coupon from "../models/coupon.model";
 import { Admin } from "../models/admin.model";
 import { AdminRole,IAdmin } from "../types/interface/interface";
 import { Store } from "../models/store.model";
+import jwt from "jsonwebtoken";
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
         const products = req.body;
@@ -792,6 +793,7 @@ interface CreateStoreRequest {
       // Prepare store data
       const storeData: IStore = {
         name: name.trim(),
+        isOpen : true, // Default from schema
         address: {
           flatno: address.flatno.trim(),
           street: address.street.trim(),
@@ -983,6 +985,13 @@ export const adminLogin =  async (req: Request, res: Response): Promise<void> =>
         // sendAdminLoginAlert(admin.email, admin.name);
 
         // Send success response with token and user details
+        const tokenValidTill = jwt.verify(token, process.env.JWT_SECRET as string) as { exp: number };
+        var store = null; 
+        if(admin.role === AdminRole.StoreManager){
+            // get store details 
+             store = await Store.findById(admin.storeId); 
+
+        }
         res.status(200).json({
             success: true,
             message: "Login successful",
@@ -992,8 +1001,11 @@ export const adminLogin =  async (req: Request, res: Response): Promise<void> =>
                     ...admin.toObject(),
                     password: undefined, // Exclude password from response
                 },
+                store,
+                tokenValidTill: new Date(tokenValidTill.exp * 1000),
             },
         });
+
     } catch (error:any) {
         console.error("Error during admin login:", error);
          res.status(500).json({
