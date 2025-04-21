@@ -5,6 +5,7 @@ import { Store } from "../models/store.model"; // Adjust path to your Store mode
 import  Product  from "../models/product.model"; // Adjust path to your Product model (assumed)
 import { IProduct, OrderStatus } from "../types/interface/interface";
 import Order from "../models/order.model";
+import Papa from "papaparse";
 // Interface for product entry in the list
 interface ProductEntry {
   productId: string;
@@ -357,12 +358,21 @@ export const updateStock = async (req: Request, res: Response): Promise<void> =>
     });
   }
 };
-
 export const getAllProducts = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Get pagination parameters
+    // Get pagination and store parameters
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
+    const storeId = req.query.storeId as string;
+
+    // Validate storeId
+    if (!storeId || !mongoose.Types.ObjectId.isValid(storeId)) {
+      res.status(400).json({
+        success: false,
+        message: "Valid storeId is required",
+      });
+      return;
+    }
 
     // Validate pagination
     if (page < 1 || limit < 1) {
@@ -378,7 +388,7 @@ export const getAllProducts = async (req: Request, res: Response): Promise<void>
 
     // Fetch products with pagination
     const products = await Product.find({})
-      .select("-__v") // Exclude __v field
+      .select("name description unit category origin shelfLife image price actualPrice")
       .skip(skip)
       .limit(limit)
       .lean();
@@ -394,12 +404,52 @@ export const getAllProducts = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    // Fetch inventory for the store
+    const inventory = await Inventory.findOne({ storeId }).lean();
+
+    // Map products with inventory details
+    const productsWithInventory = products.map((product) => {
+      // Find inventory details for this product
+      const inventoryItem = inventory?.products?.find(
+        (item) => item.productId.toString() === product._id.toString()
+      );
+
+      // Default inventory values if not found
+      const quantity = inventoryItem?.quantity || 0;
+      const threshold = inventoryItem?.threshold || 0;
+      const availability = inventoryItem?.availability ?? false;
+
+      // Compute inventory status
+      let inventoryStatus: string;
+      if (!availability || quantity <= 0) {
+        inventoryStatus = "outOfStock";
+      } else if (quantity <= threshold) {
+        inventoryStatus = "lowStock";
+      } else if (quantity > threshold && !availability){
+        inventoryStatus = "notAvailable"
+      } 
+      
+      else {
+        inventoryStatus = "inStock";
+      }
+
+      return {
+        ...product,
+        inventory: {
+          quantity,
+          threshold,
+          availability,
+          inventoryStatus,
+        },
+      };
+    });
+
     // Return response
     res.status(200).json({
       success: true,
       message: "Products retrieved successfully",
       data: {
-        products,
+        products: productsWithInventory,
         pagination: {
           currentPage: page,
           limit,
@@ -616,6 +666,75 @@ export const changeOrderStatus = async (req: Request, res: Response): Promise<vo
       success: false,
       message: "Server error while updating order status",
       error: err.message,
+    });
+  }
+};
+
+export const downloadProductsCsv = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get store parameter
+    const storeId = req.query.storeId as string;
+
+    // Validate storeId
+    if (!storeId || !mongoose.Types.ObjectId.isValid(storeId)) {
+      res.status(400).json({
+        success: false,
+        message: "Valid storeId is required",
+      });
+      return;
+    }
+
+    // Fetch all products (no pagination)
+    const products = await Product.find({})
+      .select("name") // Only fetch name
+      .lean();
+
+    if (!products || products.length === 0) {
+      res.status(404).json({
+        success: false,
+        message: "No products found",
+      });
+      return;
+    }
+
+    // Fetch inventory for the store
+    const inventory = await Inventory.findOne({ storeId }).lean();
+
+    // Map products with inventory details
+    const csvData = products.map((product) => ({
+      "productId": product._id.toString(),
+      name: product.name,
+      quantity: inventory?.products?.find(
+        (item) => item.productId.toString() === product._id.toString()
+      )?.quantity || 0,
+      threshold: inventory?.products?.find(
+        (item) => item.productId.toString() === product._id.toString()
+      )?.threshold || 0,
+      availability: (
+        inventory?.products?.find(
+          (item) => item.productId.toString() === product._id.toString()
+        )?.availability ?? false
+      ).toString(),
+    }));
+
+    // Generate CSV using PapaParse
+    const csvContent = Papa.unparse(csvData, {
+      header: true,
+      columns: ["productId", "name", "quantity", "threshold", "availability"],
+    });
+
+    // Set response headers for CSV download
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=products.csv");
+
+    // Send CSV content
+    res.status(200).send(csvContent);
+  } catch (error: any) {
+    console.error("Error generating products CSV:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while generating products CSV",
+      error: error.message,
     });
   }
 };

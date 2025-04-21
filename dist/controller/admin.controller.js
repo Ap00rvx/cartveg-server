@@ -36,6 +36,7 @@ const coupon_model_1 = __importDefault(require("../models/coupon.model"));
 const admin_model_1 = require("../models/admin.model");
 const interface_1 = require("../types/interface/interface");
 const store_model_1 = require("../models/store.model");
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const products = req.body;
@@ -882,12 +883,20 @@ const adminLogin = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         // Send login alert email
         // sendAdminLoginAlert(admin.email, admin.name);
         // Send success response with token and user details
+        var store = null;
+        if (admin.role === interface_1.AdminRole.StoreManager) {
+            store = yield store_model_1.Store.findById(admin.storeId).select("name address phone email latitude longitude radius openingTime").lean();
+        }
+        const time = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
+        const tokenValidTill = new Date(time.exp * 1000); // Convert to milliseconds
         res.status(200).json({
             success: true,
             message: "Login successful",
             data: {
                 token,
+                tokenValidTill,
                 user: Object.assign(Object.assign({}, admin.toObject()), { password: undefined }),
+                store
             },
         });
     }

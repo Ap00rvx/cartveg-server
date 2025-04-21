@@ -18,6 +18,7 @@ import Coupon from "../models/coupon.model";
 import { Admin } from "../models/admin.model";
 import { AdminRole,IAdmin } from "../types/interface/interface";
 import { Store } from "../models/store.model";
+import jwt from "jsonwebtoken";
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
         const products = req.body;
@@ -983,15 +984,25 @@ export const adminLogin =  async (req: Request, res: Response): Promise<void> =>
         // sendAdminLoginAlert(admin.email, admin.name);
 
         // Send success response with token and user details
+
+        var store = null ; 
+        if (admin.role === AdminRole.StoreManager) {
+            store = await Store.findById( admin.storeId ).select("name address phone email latitude longitude radius openingTime").lean();
+
+        }
+        const time =  jwt.verify(token, process.env.JWT_SECRET as string) as { exp: number };
+        const tokenValidTill = new Date(time.exp * 1000); // Convert to milliseconds
         res.status(200).json({
             success: true,
             message: "Login successful",
             data: {
                 token,
+                tokenValidTill,
                 user: {
                     ...admin.toObject(),
                     password: undefined, // Exclude password from response
                 },
+                store
             },
         });
     } catch (error:any) {

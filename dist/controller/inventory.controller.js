@@ -12,13 +12,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.changeOrderStatus = exports.getStoreOrder = exports.getProductById = exports.getAllProducts = exports.updateStock = exports.getInventoryProducts = exports.addProductToInventory = void 0;
+exports.downloadProductsCsv = exports.changeOrderStatus = exports.getStoreOrder = exports.getProductById = exports.getAllProducts = exports.updateStock = exports.getInventoryProducts = exports.addProductToInventory = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const inventory_model_1 = require("../models/inventory.model"); // Adjust path to your Inventory model
 const store_model_1 = require("../models/store.model"); // Adjust path to your Store model
 const product_model_1 = __importDefault(require("../models/product.model")); // Adjust path to your Product model (assumed)
 const interface_1 = require("../types/interface/interface");
 const order_model_1 = __importDefault(require("../models/order.model"));
+const papaparse_1 = __importDefault(require("papaparse"));
 // Controller to add multiple products to inventory
 const addProductToInventory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
@@ -310,9 +311,18 @@ const updateStock = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
 exports.updateStock = updateStock;
 const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        // Get pagination parameters
+        // Get pagination and store parameters
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
+        const storeId = req.query.storeId;
+        // Validate storeId
+        if (!storeId || !mongoose_1.default.Types.ObjectId.isValid(storeId)) {
+            res.status(400).json({
+                success: false,
+                message: "Valid storeId is required",
+            });
+            return;
+        }
         // Validate pagination
         if (page < 1 || limit < 1) {
             res.status(400).json({
@@ -325,7 +335,7 @@ const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const skip = (page - 1) * limit;
         // Fetch products with pagination
         const products = yield product_model_1.default.find({})
-            .select("-__v") // Exclude __v field
+            .select("name description unit category origin shelfLife image price actualPrice")
             .skip(skip)
             .limit(limit)
             .lean();
@@ -338,12 +348,44 @@ const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
             });
             return;
         }
+        // Fetch inventory for the store
+        const inventory = yield inventory_model_1.Inventory.findOne({ storeId }).lean();
+        // Map products with inventory details
+        const productsWithInventory = products.map((product) => {
+            var _a, _b;
+            // Find inventory details for this product
+            const inventoryItem = (_a = inventory === null || inventory === void 0 ? void 0 : inventory.products) === null || _a === void 0 ? void 0 : _a.find((item) => item.productId.toString() === product._id.toString());
+            // Default inventory values if not found
+            const quantity = (inventoryItem === null || inventoryItem === void 0 ? void 0 : inventoryItem.quantity) || 0;
+            const threshold = (inventoryItem === null || inventoryItem === void 0 ? void 0 : inventoryItem.threshold) || 0;
+            const availability = (_b = inventoryItem === null || inventoryItem === void 0 ? void 0 : inventoryItem.availability) !== null && _b !== void 0 ? _b : false;
+            // Compute inventory status
+            let inventoryStatus;
+            if (!availability || quantity <= 0) {
+                inventoryStatus = "outOfStock";
+            }
+            else if (quantity <= threshold) {
+                inventoryStatus = "lowStock";
+            }
+            else if (quantity > threshold && !availability) {
+                inventoryStatus = "notAvailable";
+            }
+            else {
+                inventoryStatus = "inStock";
+            }
+            return Object.assign(Object.assign({}, product), { inventory: {
+                    quantity,
+                    threshold,
+                    availability,
+                    inventoryStatus,
+                } });
+        });
         // Return response
         res.status(200).json({
             success: true,
             message: "Products retrieved successfully",
             data: {
-                products,
+                products: productsWithInventory,
                 pagination: {
                     currentPage: page,
                     limit,
@@ -550,3 +592,60 @@ const changeOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
     }
 });
 exports.changeOrderStatus = changeOrderStatus;
+const downloadProductsCsv = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        // Get store parameter
+        const storeId = req.query.storeId;
+        // Validate storeId
+        if (!storeId || !mongoose_1.default.Types.ObjectId.isValid(storeId)) {
+            res.status(400).json({
+                success: false,
+                message: "Valid storeId is required",
+            });
+            return;
+        }
+        // Fetch all products (no pagination)
+        const products = yield product_model_1.default.find({})
+            .select("name") // Only fetch name
+            .lean();
+        if (!products || products.length === 0) {
+            res.status(404).json({
+                success: false,
+                message: "No products found",
+            });
+            return;
+        }
+        // Fetch inventory for the store
+        const inventory = yield inventory_model_1.Inventory.findOne({ storeId }).lean();
+        // Map products with inventory details
+        const csvData = products.map((product) => {
+            var _a, _b, _c, _d, _e, _f, _g;
+            return ({
+                "productId": product._id.toString(),
+                name: product.name,
+                quantity: ((_b = (_a = inventory === null || inventory === void 0 ? void 0 : inventory.products) === null || _a === void 0 ? void 0 : _a.find((item) => item.productId.toString() === product._id.toString())) === null || _b === void 0 ? void 0 : _b.quantity) || 0,
+                threshold: ((_d = (_c = inventory === null || inventory === void 0 ? void 0 : inventory.products) === null || _c === void 0 ? void 0 : _c.find((item) => item.productId.toString() === product._id.toString())) === null || _d === void 0 ? void 0 : _d.threshold) || 0,
+                availability: ((_g = (_f = (_e = inventory === null || inventory === void 0 ? void 0 : inventory.products) === null || _e === void 0 ? void 0 : _e.find((item) => item.productId.toString() === product._id.toString())) === null || _f === void 0 ? void 0 : _f.availability) !== null && _g !== void 0 ? _g : false).toString(),
+            });
+        });
+        // Generate CSV using PapaParse
+        const csvContent = papaparse_1.default.unparse(csvData, {
+            header: true,
+            columns: ["productId", "name", "quantity", "threshold", "availability"],
+        });
+        // Set response headers for CSV download
+        res.setHeader("Content-Type", "text/csv");
+        res.setHeader("Content-Disposition", "attachment; filename=products.csv");
+        // Send CSV content
+        res.status(200).send(csvContent);
+    }
+    catch (error) {
+        console.error("Error generating products CSV:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while generating products CSV",
+            error: error.message,
+        });
+    }
+});
+exports.downloadProductsCsv = downloadProductsCsv;

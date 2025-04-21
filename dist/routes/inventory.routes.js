@@ -10,6 +10,7 @@ router.get("/", storeManager_middleware_1.verifyStoreManager, inventory_controll
 router.post("/add", storeManager_middleware_1.verifyStoreManager, inventory_controller_1.addProductToInventory);
 // Route to update stock for a specific product
 router.put("/update", storeManager_middleware_1.verifyStoreManager, inventory_controller_1.updateStock);
+router.get("/download", inventory_controller_1.downloadProductsCsv); // Route to download products as CSV
 router.get("/product/", storeManager_middleware_1.verifyStoreManager, inventory_controller_1.getAllProducts); // Route to get all products in the inventory
 // Route to get a product by ID
 router.get("/product/:id", storeManager_middleware_1.verifyStoreManager, inventory_controller_1.getProductById); // Route to get a product by ID
