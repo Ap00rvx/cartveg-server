@@ -16,6 +16,7 @@ import cartRoutes from "./routes/cart.routes";
 import couponRoutes from "./routes/coupon.routes"; 
 import inventoryRoutes from "./routes/inventory.routes";
 import categoryRoutes from "./routes/category.routes";
+import reportRoutes from "./routes/report.routes";
 
 
 const serviceAccount = require(__dirname + "/service_account.json");
@@ -46,6 +47,7 @@ app.use('/cart', cartRoutes);
 app.use('/coupon', couponRoutes);
 app.use("/inventory", inventoryRoutes);
 app.use('/category', categoryRoutes);
+app.use('/report', reportRoutes);
 
 (async()=>{
     try {

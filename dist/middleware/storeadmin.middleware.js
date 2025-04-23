@@ -12,13 +12,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyStoreManager = void 0;
+exports.verifyStoreAdmin = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const admin_model_1 = require("../models/admin.model"); // Adjust path to your Admin model
 const interface_1 = require("../types/interface/interface"); // Adjust path to your AdminRole enum
 const mongoose_1 = __importDefault(require("mongoose"));
 // Middleware to verify StoreManager authorization
-const verifyStoreManager = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const verifyStoreAdmin = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         // Get token from Authorization header
         const authHeader = req.headers.authorization;
@@ -41,6 +41,7 @@ const verifyStoreManager = (req, res, next) => __awaiter(void 0, void 0, void 0,
             });
             return;
         }
+        console.log("Admin found:", admin); // Debugging line
         // // Check if admin is activated
         // if (!admin.isActivate) {
         //   res.status(403).json({
@@ -50,16 +51,16 @@ const verifyStoreManager = (req, res, next) => __awaiter(void 0, void 0, void 0,
         //   return;
         // }
         // Allow SuperAdmin to proceed without storeId check
-        if (admin.isSuperAdmin || admin.role === interface_1.AdminRole.SuperAdmin || admin.role === interface_1.AdminRole.StoreAdmin) {
+        if (admin.isSuperAdmin || admin.role === interface_1.AdminRole.SuperAdmin) {
             req.user = decoded;
             next();
             return;
         }
         // Verify StoreManager role
-        if (admin.role !== interface_1.AdminRole.StoreManager) {
+        if (admin.role !== interface_1.AdminRole.StoreAdmin) {
             res.status(403).json({
                 success: false,
-                message: "Access denied: Only StoreManagers or SuperAdmins allowed",
+                message: "Access denied: Only StoreAdmins or SuperAdmins allowed",
             });
             return;
         }
@@ -115,4 +116,4 @@ const verifyStoreManager = (req, res, next) => __awaiter(void 0, void 0, void 0,
         }
     }
 });
-exports.verifyStoreManager = verifyStoreManager;
+exports.verifyStoreAdmin = verifyStoreAdmin;

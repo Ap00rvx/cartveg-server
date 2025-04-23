@@ -5,6 +5,7 @@ var AdminRole;
 (function (AdminRole) {
     AdminRole["SuperAdmin"] = "superadmin";
     AdminRole["StoreManager"] = "storemanager";
+    AdminRole["StoreAdmin"] = "storeadmin";
 })(AdminRole || (exports.AdminRole = AdminRole = {}));
 var OrderStatus;
 (function (OrderStatus) {

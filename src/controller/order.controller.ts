@@ -1,15 +1,14 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import Order from "../models/order.model";
-import {Store} from "../models/store.model";
-import {Inventory} from "../models/inventory.model";
+import { Store } from "../models/store.model";
+import { Inventory } from "../models/inventory.model";
 import Invoice from "../models/invoice.model";
 import User from "../models/user.model";
 import Coupon from "../models/coupon.model";
 import { IOrder, IInvoice, OrderStatus, PaymentStatus } from "../types/interface/interface";
-
-// Assuming Product model exists
 import Product from "../models/product.model";
+import ZoneDailyProfitLossModel from "../models/report.models";
 
 // Helper function to calculate total amount and items
 interface ProductDetails {
@@ -57,9 +56,8 @@ class OrderController {
       deliveryAddress,
       appliedCoupon,
     } = req.body;
-    try {
-      
 
+    try {
       // Validate required fields
       if (!userId || !products || !products.length || !storeId || !deliveryAddress || isCashOnDelivery === undefined) {
         throw new Error("Missing required fields: userId, products, storeId, deliveryAddress, isCashOnDelivery");
@@ -115,7 +113,6 @@ class OrderController {
           throw new Error("Coupon not found");
         }
 
-        // Validate coupon
         if (!coupon.isActive) {
           throw new Error("Coupon is not active");
         }
@@ -135,13 +132,11 @@ class OrderController {
           throw new Error("Coupon already used by this user");
         }
 
-        // Use offValue as discount amount
         discountAmount = coupon.offValue;
         if (discountAmount > totalAmount) {
           throw new Error("Discount amount exceeds total amount");
         }
 
-        // Update coupon: add userId to usedUsers
         coupon.usedUsers.push(userId);
         await coupon.save({ session });
       }
@@ -158,7 +153,7 @@ class OrderController {
         products,
         storeId: new mongoose.Types.ObjectId(storeId),
         totalAmount: totalAmount - discountAmount,
-        shippingAmount: 50, // Example fixed shipping amount
+        shippingAmount: 50,
         totalItems,
         isCashOnDelivery,
         deliveryAddress,
@@ -199,6 +194,63 @@ class OrderController {
         }
       }
       await inventory.save({ session });
+
+      // Update ZoneDailyProfitLossModel for the order date
+      const orderDate= order.orderDate;
+      const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
+
+      console.log("Formatted date:", formattedDate); // Debugging 
+
+      const report = await ZoneDailyProfitLossModel.findOne({
+        store_id: order.storeId,
+        date: formattedDate,
+      }).session(session);
+      if (report) {
+        report.total_sale_amount += order.totalAmount;
+        report.total_orders += 1;
+        report.avg_order_value = report.total_sale_amount / report.total_orders;
+
+        // Update most sold product
+        const productSales = new Map<string, number>();
+        for (const item of products) {
+          const productId = item.productId.toString();
+          productSales.set(productId, (productSales.get(productId) || 0) + item.quantity);
+        }
+        let maxQuantity = 0;
+        let mostSellingProductId: string | undefined;
+        for (const [productId, quantity] of productSales) {
+          if (quantity > maxQuantity) {
+            maxQuantity = quantity;
+            mostSellingProductId = productId;
+          }
+        }
+        if (mostSellingProductId) {
+          report.most_selling_product_id = new mongoose.Types.ObjectId(mostSellingProductId).toString();
+          report.most_selling_quantity = maxQuantity;
+        }
+        report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+        report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
+
+        await report.save({ session });
+      } else {
+        const newReport = new ZoneDailyProfitLossModel({
+          store_id: storeId,
+          date: orderDate,
+          total_sale_amount: order.totalAmount,
+          total_purchase_cost: 0,
+          total_fixed_cost: 0,
+          labour_cost: 0,
+          packaging_cost: 0,
+          net_profit_or_loss: order.totalAmount,
+          status: order.totalAmount >= 0 ? "Profit" : "Loss",
+          total_orders: 1,
+          avg_order_value: order.totalAmount,
+          most_selling_product_id: products[0]?.productId,
+          most_selling_quantity: products[0]?.quantity || 0,
+          created_at: new Date().toISOString(),
+        });
+        await newReport.save({ session });
+      }
 
       // Create invoice
       const invoiceData: Partial<IInvoice> = {
@@ -301,6 +353,54 @@ class OrderController {
         throw new Error("Invoice not found for this order");
       }
 
+      // Update ZoneDailyProfitLossModel for the order date
+      const orderDate= order.orderDate;
+      const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
+
+      console.log("Formatted date:", formattedDate); // Debugging 
+
+      const report = await ZoneDailyProfitLossModel.findOne({
+        store_id: order.storeId,
+        date: formattedDate,
+      }).session(session);
+
+      if (report) {
+        report.total_sale_amount -= order.totalAmount;
+        report.total_orders -= 1;
+        report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
+
+        // Recalculate most sold product
+        const productSales = new Map<string, number>();
+        const allOrders = await Order.find({ storeId: order.storeId, orderDate: { $gte: orderDate, $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000) } })
+          .session(session);
+        for (const ord of allOrders) {
+          for (const item of ord.products) {
+            const productId = item.productId.toString();
+            productSales.set(productId, (productSales.get(productId) || 0) + item.quantity);
+          }
+        }
+        let maxQuantity = 0;
+        let mostSellingProductId: string | undefined;
+        for (const [productId, quantity] of productSales) {
+          if (quantity > maxQuantity) {
+            maxQuantity = quantity;
+            mostSellingProductId = productId;
+          }
+        }
+        if (mostSellingProductId) {
+          report.most_selling_product_id = new mongoose.Types.ObjectId(mostSellingProductId).toString();
+          report.most_selling_quantity = maxQuantity;
+        } else {
+          report.most_selling_product_id = "";
+          report.most_selling_quantity = 0;
+        }
+
+        report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+        report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
+
+        await report.save({ session });
+      }
+
       await session.commitTransaction();
       res.status(200).json({
         success: true,
@@ -351,7 +451,7 @@ class OrderController {
         throw new Error(`Cannot transition from ${order.status} to ${status}`);
       }
 
-      // If status is Cancelled, restock inventory
+      // If status is Cancelled, restock inventory and update sales report
       if (status === OrderStatus.Cancelled) {
         const inventory = await Inventory.findOne({ storeId: order.storeId }).session(session);
         if (!inventory) {
@@ -370,6 +470,53 @@ class OrderController {
           }
         }
         await inventory.save({ session });
+
+        // Update ZoneDailyProfitLossModel for the order date
+        const orderDate= order.orderDate;
+      const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
+
+      console.log("Formatted date:", formattedDate); // Debugging 
+
+      const report = await ZoneDailyProfitLossModel.findOne({
+        store_id: order.storeId,
+        date: formattedDate,
+      }).session(session);
+
+        if (report) {
+          report.total_sale_amount -= order.totalAmount;
+          report.total_orders -= 1;
+          report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
+
+          // Recalculate most sold product
+          const productSales = new Map<string, number>();
+          const allOrders = await Order.find({ storeId: order.storeId, orderDate: { $gte: orderDate, $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000) } })
+            .session(session);
+          for (const ord of allOrders) {
+            for (const item of ord.products) {
+              const productId = item.productId.toString();
+              productSales.set(productId, (productSales.get(productId) || 0) + item.quantity);
+            }
+          }
+          let maxQuantity = 0;
+          let mostSellingProductId: string | undefined;
+          for (const [productId, quantity] of productSales) {
+            if (quantity > maxQuantity) {
+              maxQuantity = quantity;
+              mostSellingProductId = productId;
+            }
+          }
+          if (mostSellingProductId) {
+            report.most_selling_product_id = new mongoose.Types.ObjectId(mostSellingProductId).toString();
+            report.most_selling_quantity = maxQuantity;
+          } else {
+            report.most_selling_product_id = 
+            "";
+            report.most_selling_quantity = 0;
+          }
+          report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+          report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
+          await report.save({ session });
+        }
       }
 
       // Update order status and payment status
@@ -419,28 +566,26 @@ class OrderController {
     try {
       const { orderId } = req.params;
 
-      // Validate orderId
       if (!orderId) {
         throw new Error("Order ID is required");
       }
 
-      // Find order with populated fields
-      const order = await Order.find({ orderId })
-      .populate({
-        path: "products.productId",
-        select: "name price unit",
-        model : "Product",
-      })
-      .populate({
-        path: "storeId",
-        model : "Store",
-        select: "name address longitude latitude radius",
-      })
-      .populate({
-        path: "userId",
-        select: "name email",
-      })
-      .session(session);
+      const order = await Order.findOne({ orderId })
+        .populate({
+          path: "products.productId",
+          select: "name price unit",
+          model: "Product",
+        })
+        .populate({
+          path: "storeId",
+          model: "Store",
+          select: "name address longitude latitude radius",
+        })
+        .populate({
+          path: "userId",
+          select: "name email",
+        })
+        .session(session);
 
       if (!order) {
         throw new Error("Order not found");
@@ -471,21 +616,19 @@ class OrderController {
     try {
       const { userId } = req.params;
 
-      // Validate userId
       if (!mongoose.Types.ObjectId.isValid(userId)) {
         throw new Error("Invalid user ID");
       }
 
-      // Find all orders for the user with populated fields
       const orders = await Order.find({ userId: new mongoose.Types.ObjectId(userId) })
         .populate({
           path: "products.productId",
           select: "name price unit",
-          model : "Product",
+          model: "Product",
         })
         .populate({
           path: "storeId",
-          model : "Store",
+          model: "Store",
           select: "name address longitude latitude radius",
         })
         .populate({
@@ -493,12 +636,12 @@ class OrderController {
           select: "name email",
         })
         .session(session);
+
       await session.commitTransaction();
       res.status(200).json({
         success: true,
         message: orders.length > 0 ? "Orders fetched successfully" : "No orders found for this user",
         orders,
-      
       });
     } catch (error: any) {
       await session.abortTransaction();

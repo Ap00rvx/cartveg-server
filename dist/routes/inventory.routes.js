@@ -30,4 +30,6 @@ router.get("/download", inventory_controller_1.downloadProductsCsv); // Route to
 router.get("/product/", storeManager_middleware_1.verifyStoreManager, inventory_controller_1.getAllProducts); // Route to get all products in the inventory
 router.get("/product/:id", storeManager_middleware_1.verifyStoreManager, inventory_controller_1.getProductById); // Route to get a product by ID
 // Route to update product availability
+router.get("/order", storeManager_middleware_1.verifyStoreManager, inventory_controller_1.getStoreOrder); // Route to get store orders
+router.put("/order/update", storeManager_middleware_1.verifyStoreManager, inventory_controller_1.changeOrderStatus); // Route to change order status
 exports.default = router;

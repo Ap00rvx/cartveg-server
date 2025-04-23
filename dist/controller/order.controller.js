@@ -20,8 +20,8 @@ const invoice_model_1 = __importDefault(require("../models/invoice.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const coupon_model_1 = __importDefault(require("../models/coupon.model"));
 const interface_1 = require("../types/interface/interface");
-// Assuming Product model exists
 const product_model_1 = __importDefault(require("../models/product.model"));
+const report_models_1 = __importDefault(require("../models/report.models"));
 const calculateOrderTotals = (products, session) => __awaiter(void 0, void 0, void 0, function* () {
     let totalAmount = 0;
     let totalItems = 0;
@@ -46,6 +46,7 @@ class OrderController {
     // Create a new order (Transaction-based)
     createOrder(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             const session = yield mongoose_1.default.startSession();
             session.startTransaction();
             const { userId, products, storeId, isCashOnDelivery, deliveryAddress, appliedCoupon, } = req.body;
@@ -95,7 +96,6 @@ class OrderController {
                     if (!coupon) {
                         throw new Error("Coupon not found");
                     }
-                    // Validate coupon
                     if (!coupon.isActive) {
                         throw new Error("Coupon is not active");
                     }
@@ -114,12 +114,10 @@ class OrderController {
                     if (coupon.usedUsers.includes(userId)) {
                         throw new Error("Coupon already used by this user");
                     }
-                    // Use offValue as discount amount
                     discountAmount = coupon.offValue;
                     if (discountAmount > totalAmount) {
                         throw new Error("Discount amount exceeds total amount");
                     }
-                    // Update coupon: add userId to usedUsers
                     coupon.usedUsers.push(userId);
                     yield coupon.save({ session });
                 }
@@ -134,7 +132,7 @@ class OrderController {
                     products,
                     storeId: new mongoose_1.default.Types.ObjectId(storeId),
                     totalAmount: totalAmount - discountAmount,
-                    shippingAmount: 50, // Example fixed shipping amount
+                    shippingAmount: 50,
                     totalItems,
                     isCashOnDelivery,
                     deliveryAddress,
@@ -170,6 +168,59 @@ class OrderController {
                     }
                 }
                 yield inventory.save({ session });
+                // Update ZoneDailyProfitLossModel for the order date
+                const orderDate = order.orderDate;
+                const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
+                console.log("Formatted date:", formattedDate); // Debugging 
+                const report = yield report_models_1.default.findOne({
+                    store_id: order.storeId,
+                    date: formattedDate,
+                }).session(session);
+                if (report) {
+                    report.total_sale_amount += order.totalAmount;
+                    report.total_orders += 1;
+                    report.avg_order_value = report.total_sale_amount / report.total_orders;
+                    // Update most sold product
+                    const productSales = new Map();
+                    for (const item of products) {
+                        const productId = item.productId.toString();
+                        productSales.set(productId, (productSales.get(productId) || 0) + item.quantity);
+                    }
+                    let maxQuantity = 0;
+                    let mostSellingProductId;
+                    for (const [productId, quantity] of productSales) {
+                        if (quantity > maxQuantity) {
+                            maxQuantity = quantity;
+                            mostSellingProductId = productId;
+                        }
+                    }
+                    if (mostSellingProductId) {
+                        report.most_selling_product_id = new mongoose_1.default.Types.ObjectId(mostSellingProductId).toString();
+                        report.most_selling_quantity = maxQuantity;
+                    }
+                    report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+                    report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
+                    yield report.save({ session });
+                }
+                else {
+                    const newReport = new report_models_1.default({
+                        store_id: storeId,
+                        date: orderDate,
+                        total_sale_amount: order.totalAmount,
+                        total_purchase_cost: 0,
+                        total_fixed_cost: 0,
+                        labour_cost: 0,
+                        packaging_cost: 0,
+                        net_profit_or_loss: order.totalAmount,
+                        status: order.totalAmount >= 0 ? "Profit" : "Loss",
+                        total_orders: 1,
+                        avg_order_value: order.totalAmount,
+                        most_selling_product_id: (_a = products[0]) === null || _a === void 0 ? void 0 : _a.productId,
+                        most_selling_quantity: ((_b = products[0]) === null || _b === void 0 ? void 0 : _b.quantity) || 0,
+                        created_at: new Date().toISOString(),
+                    });
+                    yield newReport.save({ session });
+                }
                 // Create invoice
                 const invoiceData = {
                     invoiceId,
@@ -263,6 +314,48 @@ class OrderController {
                 else {
                     throw new Error("Invoice not found for this order");
                 }
+                // Update ZoneDailyProfitLossModel for the order date
+                const orderDate = order.orderDate;
+                const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
+                console.log("Formatted date:", formattedDate); // Debugging 
+                const report = yield report_models_1.default.findOne({
+                    store_id: order.storeId,
+                    date: formattedDate,
+                }).session(session);
+                if (report) {
+                    report.total_sale_amount -= order.totalAmount;
+                    report.total_orders -= 1;
+                    report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
+                    // Recalculate most sold product
+                    const productSales = new Map();
+                    const allOrders = yield order_model_1.default.find({ storeId: order.storeId, orderDate: { $gte: orderDate, $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000) } })
+                        .session(session);
+                    for (const ord of allOrders) {
+                        for (const item of ord.products) {
+                            const productId = item.productId.toString();
+                            productSales.set(productId, (productSales.get(productId) || 0) + item.quantity);
+                        }
+                    }
+                    let maxQuantity = 0;
+                    let mostSellingProductId;
+                    for (const [productId, quantity] of productSales) {
+                        if (quantity > maxQuantity) {
+                            maxQuantity = quantity;
+                            mostSellingProductId = productId;
+                        }
+                    }
+                    if (mostSellingProductId) {
+                        report.most_selling_product_id = new mongoose_1.default.Types.ObjectId(mostSellingProductId).toString();
+                        report.most_selling_quantity = maxQuantity;
+                    }
+                    else {
+                        report.most_selling_product_id = "";
+                        report.most_selling_quantity = 0;
+                    }
+                    report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+                    report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
+                    yield report.save({ session });
+                }
                 yield session.commitTransaction();
                 res.status(200).json({
                     success: true,
@@ -310,7 +403,7 @@ class OrderController {
                 if (!validTransitions[order.status].includes(status)) {
                     throw new Error(`Cannot transition from ${order.status} to ${status}`);
                 }
-                // If status is Cancelled, restock inventory
+                // If status is Cancelled, restock inventory and update sales report
                 if (status === interface_1.OrderStatus.Cancelled) {
                     const inventory = yield inventory_model_1.Inventory.findOne({ storeId: order.storeId }).session(session);
                     if (!inventory) {
@@ -327,6 +420,49 @@ class OrderController {
                         }
                     }
                     yield inventory.save({ session });
+                    // Update ZoneDailyProfitLossModel for the order date
+                    const orderDate = order.orderDate;
+                    const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
+                    console.log("Formatted date:", formattedDate); // Debugging 
+                    const report = yield report_models_1.default.findOne({
+                        store_id: order.storeId,
+                        date: formattedDate,
+                    }).session(session);
+                    if (report) {
+                        report.total_sale_amount -= order.totalAmount;
+                        report.total_orders -= 1;
+                        report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
+                        // Recalculate most sold product
+                        const productSales = new Map();
+                        const allOrders = yield order_model_1.default.find({ storeId: order.storeId, orderDate: { $gte: orderDate, $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000) } })
+                            .session(session);
+                        for (const ord of allOrders) {
+                            for (const item of ord.products) {
+                                const productId = item.productId.toString();
+                                productSales.set(productId, (productSales.get(productId) || 0) + item.quantity);
+                            }
+                        }
+                        let maxQuantity = 0;
+                        let mostSellingProductId;
+                        for (const [productId, quantity] of productSales) {
+                            if (quantity > maxQuantity) {
+                                maxQuantity = quantity;
+                                mostSellingProductId = productId;
+                            }
+                        }
+                        if (mostSellingProductId) {
+                            report.most_selling_product_id = new mongoose_1.default.Types.ObjectId(mostSellingProductId).toString();
+                            report.most_selling_quantity = maxQuantity;
+                        }
+                        else {
+                            report.most_selling_product_id =
+                                "";
+                            report.most_selling_quantity = 0;
+                        }
+                        report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+                        report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
+                        yield report.save({ session });
+                    }
                 }
                 // Update order status and payment status
                 order.status = status;
@@ -377,12 +513,10 @@ class OrderController {
             session.startTransaction();
             try {
                 const { orderId } = req.params;
-                // Validate orderId
                 if (!orderId) {
                     throw new Error("Order ID is required");
                 }
-                // Find order with populated fields
-                const order = yield order_model_1.default.find({ orderId })
+                const order = yield order_model_1.default.findOne({ orderId })
                     .populate({
                     path: "products.productId",
                     select: "name price unit",
@@ -427,11 +561,9 @@ class OrderController {
             session.startTransaction();
             try {
                 const { userId } = req.params;
-                // Validate userId
                 if (!mongoose_1.default.Types.ObjectId.isValid(userId)) {
                     throw new Error("Invalid user ID");
                 }
-                // Find all orders for the user with populated fields
                 const orders = yield order_model_1.default.find({ userId: new mongoose_1.default.Types.ObjectId(userId) })
                     .populate({
                     path: "products.productId",

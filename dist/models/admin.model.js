@@ -40,7 +40,7 @@ const adminSchema = new mongoose_1.default.Schema({
         type: mongoose_1.default.Types.ObjectId,
         ref: 'Store',
         required: function () {
-            return this.role === interface_1.AdminRole.StoreManager;
+            return this.role !== interface_1.AdminRole.SuperAdmin;
         }
     }
 }, {

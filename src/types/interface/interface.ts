@@ -78,6 +78,7 @@ export interface IAdmin {
 export enum AdminRole {
     SuperAdmin = "superadmin",
     StoreManager = "storemanager",
+    StoreAdmin = "storeadmin",
 }
 
 
@@ -132,6 +133,40 @@ export interface IOrder {
     rzpPaymentId?: string;
     rzpOrderId?: string;
 }
+export interface IPurchaseDocument{
+    store_id : mongoose.Types.ObjectId; 
+    date : string;
+    products : 
+        {
+            name: string; 
+            quantity: number;
+            total_cost: number;
+            price_per_unit: number;
+            unit: string;
+            // product_id: mongoose.Types.ObjectId;
+        }[]; 
+    
+    total_cost: number;
+    total_quantity: number;
+}
+export interface IZoneDailyProfitLoss {
+    
+    store_id: mongoose.Types.ObjectId; 
+    date: string ;
+    total_sale_amount: number;
+    total_purchase_cost: number;
+    total_fixed_cost: number;
+    labour_cost: number;
+    packaging_cost: number;
+    net_profit_or_loss: number;
+    status: 'Profit' | 'Loss';
+    most_selling_product_id?: string; // Optional, as not all zones may have sales
+    most_selling_quantity?: number;
+    total_orders: number;
+    avg_order_value: number;
+    created_at: string;
+  }
+
 export interface ICoupon {
     minValue  : number; 
     expiry :Date; 

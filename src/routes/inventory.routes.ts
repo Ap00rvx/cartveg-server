@@ -1,7 +1,7 @@
 import { verifyStoreManager } from "../middleware/storeManager.middleware";
 import { Router } from "express";
 import multer from "multer";
-import { addProductToInventory, updateStock,getInventoryProducts,getAllProducts,getProductById,downloadProductsCsv,uploadInventoryCsv} from "../controller/inventory.controller";
+import { addProductToInventory, updateStock,getInventoryProducts,getAllProducts,getProductById,downloadProductsCsv,uploadInventoryCsv,getStoreOrder,changeOrderStatus} from "../controller/inventory.controller";
 const upload = multer({
     storage: multer.memoryStorage(),
     fileFilter: (req, file, cb) => {
@@ -32,4 +32,7 @@ router.get("/product/", verifyStoreManager, getAllProducts); // Route to get all
 router.get("/product/:id", verifyStoreManager, getProductById); // Route to get a product by ID
 // Route to update product availability
 
+router.get("/order", verifyStoreManager, getStoreOrder); // Route to get store orders
+
+router.put("/order/update", verifyStoreManager, changeOrderStatus); // Route to change order status
 export default router;

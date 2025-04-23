@@ -38,7 +38,7 @@ const adminSchema = new mongoose.Schema<IAdmin>({
         type : mongoose.Types.ObjectId,
         ref : 'Store',
         required : function (this: IAdmin) {
-            return this.role === AdminRole.StoreManager;
+            return this.role !== AdminRole.SuperAdmin;
         }
     }
     },{

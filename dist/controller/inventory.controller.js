@@ -20,6 +20,7 @@ const product_model_1 = __importDefault(require("../models/product.model")); // 
 const interface_1 = require("../types/interface/interface");
 const order_model_1 = __importDefault(require("../models/order.model"));
 const papaparse_1 = __importDefault(require("papaparse"));
+const report_models_1 = __importDefault(require("../models/report.models"));
 // Controller to add multiple products to inventory
 const addProductToInventory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
@@ -523,52 +524,34 @@ const getStoreOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* 
 }); // Adjust path to your Order model
 exports.getStoreOrder = getStoreOrder;
 const changeOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const session = yield mongoose_1.default.startSession();
+    session.startTransaction();
     try {
         const { orderId, newStatus, storeId } = req.body;
         // Validate inputs
         if (!orderId || !newStatus || !storeId) {
-            res.status(400).json({
-                success: false,
-                message: "orderId and newStatus and storeId  are required",
-            });
-            return;
+            throw new Error("orderId, newStatus, and storeId are required");
         }
         // Validate MongoDB ObjectId
         if (!mongoose_1.default.Types.ObjectId.isValid(storeId)) {
-            res.status(400).json({
-                success: false,
-                message: "Invalid StoreiD format",
-            });
-            return;
+            throw new Error("Invalid StoreiD format");
         }
         // Validate newStatus
         const validStatuses = Object.values(interface_1.OrderStatus);
         if (!validStatuses.includes(newStatus)) {
-            res.status(400).json({
-                success: false,
-                message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
-            });
-            return;
+            throw new Error(`Invalid status. Must be one of: ${validStatuses.join(", ")}`);
         }
         // Find the order
         const order = yield order_model_1.default.findOne({
             orderId,
             storeId: new mongoose_1.default.Types.ObjectId(storeId),
-        });
+        }).session(session);
         if (!order) {
-            res.status(404).json({
-                success: false,
-                message: "Order not found",
-            });
-            return;
+            throw new Error("Order not found");
         }
         // Check if order is already cancelled
         if (order.status === interface_1.OrderStatus.Cancelled) {
-            res.status(400).json({
-                success: false,
-                message: "Cannot change status of a cancelled order",
-            });
-            return;
+            throw new Error("Cannot change status of a cancelled order");
         }
         // Define allowed status transitions
         const allowedTransitions = {
@@ -579,27 +562,73 @@ const changeOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
             ],
             [interface_1.OrderStatus.Confirmed]: [interface_1.OrderStatus.Shipped, interface_1.OrderStatus.Cancelled],
             [interface_1.OrderStatus.Shipped]: [interface_1.OrderStatus.Delivered, interface_1.OrderStatus.Cancelled],
-            [interface_1.OrderStatus.Delivered]: [interface_1.OrderStatus.Cancelled], // Optional, can be [] if no transitions
+            [interface_1.OrderStatus.Delivered]: [interface_1.OrderStatus.Cancelled],
             [interface_1.OrderStatus.Cancelled]: [],
         };
         // Validate status transition
         if (!allowedTransitions[order.status].includes(newStatus)) {
-            res.status(400).json({
-                success: false,
-                message: `Invalid status transition from ${order.status} to ${newStatus}`,
-            });
-            return;
+            throw new Error(`Invalid status transition from ${order.status} to ${newStatus}`);
+        }
+        // If the new status is Cancelled, update ZoneDailyProfitLossModel
+        if (newStatus === interface_1.OrderStatus.Cancelled) {
+            const orderDate = order.orderDate;
+            // Format orderDate to "DD-MM-YY" to match ZoneDailyProfitLossModel
+            const formattedOrderDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
+            const report = yield report_models_1.default.findOne({
+                store_id: storeId,
+                date: formattedOrderDate,
+            }).session(session);
+            if (report) {
+                report.total_sale_amount -= order.totalAmount;
+                report.total_orders -= 1;
+                report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
+                // Recalculate most sold product
+                const productSales = new Map();
+                const allOrders = yield order_model_1.default.find({
+                    storeId: storeId,
+                    orderDate: {
+                        $gte: new Date(orderDate.setHours(0, 0, 0, 0)),
+                        $lt: new Date(orderDate.setHours(23, 59, 59, 999)),
+                    },
+                    status: { $ne: interface_1.OrderStatus.Cancelled }, // Exclude cancelled orders
+                }).session(session);
+                for (const ord of allOrders) {
+                    for (const item of ord.products) {
+                        const productId = item.productId.toString();
+                        productSales.set(productId, (productSales.get(productId) || 0) + item.quantity);
+                    }
+                }
+                let maxQuantity = 0;
+                let mostSellingProductId;
+                for (const [productId, quantity] of productSales) {
+                    if (quantity > maxQuantity) {
+                        maxQuantity = quantity;
+                        mostSellingProductId = productId;
+                    }
+                }
+                if (mostSellingProductId) {
+                    report.most_selling_product_id = new mongoose_1.default.Types.ObjectId(mostSellingProductId).toString();
+                    report.most_selling_quantity = maxQuantity;
+                }
+                else {
+                    report.most_selling_product_id = "";
+                    report.most_selling_quantity = 0;
+                }
+                yield report.save({ session });
+            }
         }
         // Update the order status
         order.status = newStatus;
-        yield order.save();
+        yield order.save({ session });
         // Populate product details for response
         const updatedOrder = yield order_model_1.default.findOne({
             orderId,
-            storeId
+            storeId,
         })
             .populate("products.productId", "name description unit category origin shelfLife image price actualPrice", "Product")
-            .lean();
+            .lean()
+            .session(session);
+        yield session.commitTransaction();
         res.status(200).json({
             success: true,
             message: `Order status updated to ${newStatus}`,
@@ -607,12 +636,16 @@ const changeOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
         });
     }
     catch (err) {
+        yield session.abortTransaction();
         console.error("Error updating order status:", err);
         res.status(500).json({
             success: false,
             message: "Server error while updating order status",
             error: err.message,
         });
+    }
+    finally {
+        session.endSession();
     }
 });
 exports.changeOrderStatus = changeOrderStatus;

@@ -866,6 +866,14 @@ export const createAdmin = async (req: Request, res: Response): Promise<void> =>
         });
         return;
       }
+
+      if(role === AdminRole.StoreAdmin && !storeId) {
+        res.status(400).json({
+          success: false,
+          message: "storeId is required for StoreAdmin role",
+        });
+        return;
+      }
   
       // For SuperAdmin, ensure storeId is not provided
       if (role === AdminRole.SuperAdmin && storeId) {
@@ -913,7 +921,13 @@ export const createAdmin = async (req: Request, res: Response): Promise<void> =>
       if (role === AdminRole.StoreManager && storeId) {
         adminData.storeId = new mongoose.Types.ObjectId(storeId);
       }
-  
+
+        // Add storeId for StoreAdmin
+        if (role === AdminRole.StoreAdmin && storeId) {
+            adminData.storeId = new mongoose.Types.ObjectId(storeId);
+        }
+
+
       // Create and save the admin
       const newAdmin = await Admin.create(adminData);
   

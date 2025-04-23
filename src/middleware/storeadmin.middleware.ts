@@ -20,7 +20,7 @@ declare global {
 }
 
 // Middleware to verify StoreManager authorization
-export const verifyStoreManager = async (
+export const verifyStoreAdmin = async (
   req: Request,
   res: Response,
   next: NextFunction
@@ -50,6 +50,7 @@ export const verifyStoreManager = async (
       });
       return;
     }
+    console.log("Admin found:", admin); // Debugging line
 
     // // Check if admin is activated
     // if (!admin.isActivate) {
@@ -61,17 +62,17 @@ export const verifyStoreManager = async (
     // }
 
     // Allow SuperAdmin to proceed without storeId check
-    if (admin.isSuperAdmin || admin.role === AdminRole.SuperAdmin || admin.role === AdminRole.StoreAdmin) {
+    if (admin.isSuperAdmin || admin.role === AdminRole.SuperAdmin) {
       req.user = decoded;
       next();
       return;
     }
 
     // Verify StoreManager role
-    if (admin.role !== AdminRole.StoreManager) {
+    if (admin.role !== AdminRole.StoreAdmin) {
       res.status(403).json({
         success: false,
-        message: "Access denied: Only StoreManagers or SuperAdmins allowed",
+        message: "Access denied: Only StoreAdmins or SuperAdmins allowed",
       });
       return;
     }
