@@ -12,13 +12,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.addAddress = exports.saveUserDetails = exports.getUserDetails = exports.saveFCMToken = exports.verifyOtp = exports.resendOtp = exports.authenticate = void 0;
+exports.getActiveCashbacks = exports.addAddress = exports.saveUserDetails = exports.getUserDetails = exports.saveFCMToken = exports.verifyOtp = exports.resendOtp = exports.authenticate = void 0;
 const user_model_1 = __importDefault(require("../models/user.model"));
 const otp_model_1 = __importDefault(require("../models/otp.model"));
 const nodemailer_1 = __importDefault(require("../config/nodemailer"));
 const crypto_1 = __importDefault(require("crypto"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const cashback_model_1 = __importDefault(require("../models/cashback.model"));
 dotenv_1.default.config();
 /**
  * Calculates distance between two geographic points using the Haversine formula.
@@ -433,3 +434,26 @@ exports.addAddress = addAddress;
 //     res.status(500).json(response); // Send error response
 //   }
 // };
+const getActiveCashbacks = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const activeCashbacks = yield cashback_model_1.default.find({
+            isActive: true,
+        }); // Filter active cashbacks
+        const successResponse = {
+            message: " cashbacks fetched successfully",
+            statusCode: 200,
+            data: activeCashbacks,
+        };
+        res.status(200).json(successResponse); // Send success response
+    }
+    catch (err) {
+        console.error("Error fetching active cashbacks:", err); // Log error
+        const response = {
+            message: err.message,
+            statusCode: 500,
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        };
+        res.status(500).json(response); // Send error response
+    }
+});
+exports.getActiveCashbacks = getActiveCashbacks;

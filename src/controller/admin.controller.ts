@@ -19,6 +19,10 @@ import { Admin } from "../models/admin.model";
 import { AdminRole,IAdmin } from "../types/interface/interface";
 import { Store } from "../models/store.model";
 import jwt from "jsonwebtoken";
+import { ICashback } from "../types/interface/i.cashback";
+import Cashback from "../models/cashback.model";
+
+
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
         const products = req.body;
@@ -1188,6 +1192,110 @@ export const updateStoreDetails= async (req: Request, res: Response): Promise<vo
 
         res.status(200).json({ message: "Store updated successfully", data: updatedStore });
     } catch (err: any) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+}
+
+export const createCashback = async (req: Request, res: Response): Promise<void> => {
+    try{
+        const {
+            min_purchase_amount,
+            cashback_amount,
+            isActive,
+            description
+
+        } = req.body as Partial<ICashback>;
+        // Validate required fields
+        if (!min_purchase_amount || !cashback_amount || isActive === undefined || !description) {
+            res.status(400).json({
+                message: "min_purchase_amount, cashback_amount isActive, and description are required",
+            });
+            return;
+        }
+        const cashback = await Cashback.create({
+            min_purchase_amount,
+            description,
+            cashback_amount,
+            isActive,
+        }); 
+
+        res.status(201).json({
+            message: "Cashback created successfully",
+            cashback,
+        });
+
+    }catch(err:any){  
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+}
+
+export const getAllCashback = async (req: Request, res: Response): Promise<void> => {
+    try{
+        const cashback = await Cashback.find({}).lean();
+        if(!cashback || cashback.length === 0) {
+            res.status(404).json({
+                message: "No cashback found",
+            });
+            return
+        }
+        res.status(200).json({
+            message: "Cashback fetched successfully",
+            cashback,
+        });
+    }catch(err:any){
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+}
+
+export const changeCashbackActiveStatus = async (req: Request, res: Response): Promise<void> => {
+    try{
+    
+        const { isActive, id } = req.body;
+        
+        // Validate inputs
+        if (!id) {
+            res.status(400).json({
+                message: "Cashback ID is required",
+            });
+            return;
+        }
+        
+        if (isActive === undefined) {
+            res.status(400).json({
+                message: "Active status is required",
+            });
+            return;
+        }
+        
+        // Find and update cashback status
+        const cashback = await Cashback.findById(id);
+        
+        if (!cashback) {
+            res.status(404).json({
+                message: "Cashback not found",
+            });
+            return;
+        }
+        
+        // Update the status
+        cashback.isActive = isActive;
+        await cashback.save();
+        
+        res.status(200).json({
+            message: `Cashback ${isActive ? 'activated' : 'deactivated'} successfully`,
+            cashback
+        });
+
+    }catch(err:any){
         res.status(500).json({
             message: "Internal server error",
             stack: process.env.NODE_ENV === "development" ? err.stack : undefined,

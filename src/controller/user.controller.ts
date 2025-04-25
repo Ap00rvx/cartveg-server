@@ -10,6 +10,7 @@ import { InterServerError, SuccessResponse } from "../types/types/types";
 import crypto from "crypto";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
+import Cashback from "../models/cashback.model";
 
 dotenv.config();
 
@@ -439,3 +440,29 @@ export const addAddress = async (req: Request, res: Response): Promise<void> => 
 //     res.status(500).json(response); // Send error response
 //   }
 // };
+
+export const getActiveCashbacks = async (req: Request, res: Response): Promise<void> => {
+  
+  try {
+   
+    const activeCashbacks = await Cashback.find({
+      isActive: true,
+      
+    }) // Filter active cashbacks
+
+    const successResponse: SuccessResponse = {
+      message: " cashbacks fetched successfully",
+      statusCode: 200,
+      data: activeCashbacks,
+    };
+    res.status(200).json(successResponse); // Send success response
+  } catch (err: any) {
+    console.error("Error fetching active cashbacks:", err); // Log error
+    const response: InterServerError = {
+      message: err.message,
+      statusCode: 500,
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    };
+    res.status(500).json(response); // Send error response
+  }
+}

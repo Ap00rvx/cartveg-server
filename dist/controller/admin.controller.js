@@ -23,7 +23,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
+exports.changeCashbackActiveStatus = exports.getAllCashback = exports.createCashback = exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -37,6 +37,7 @@ const admin_model_1 = require("../models/admin.model");
 const interface_1 = require("../types/interface/interface");
 const store_model_1 = require("../models/store.model");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const cashback_model_1 = __importDefault(require("../models/cashback.model"));
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const products = req.body;
@@ -1069,3 +1070,94 @@ const updateStoreDetails = (req, res) => __awaiter(void 0, void 0, void 0, funct
     }
 });
 exports.updateStoreDetails = updateStoreDetails;
+const createCashback = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { min_purchase_amount, cashback_amount, isActive, description } = req.body;
+        // Validate required fields
+        if (!min_purchase_amount || !cashback_amount || isActive === undefined || !description) {
+            res.status(400).json({
+                message: "min_purchase_amount, cashback_amount isActive, and description are required",
+            });
+            return;
+        }
+        const cashback = yield cashback_model_1.default.create({
+            min_purchase_amount,
+            description,
+            cashback_amount,
+            isActive,
+        });
+        res.status(201).json({
+            message: "Cashback created successfully",
+            cashback,
+        });
+    }
+    catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.createCashback = createCashback;
+const getAllCashback = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const cashback = yield cashback_model_1.default.find({}).lean();
+        if (!cashback || cashback.length === 0) {
+            res.status(404).json({
+                message: "No cashback found",
+            });
+            return;
+        }
+        res.status(200).json({
+            message: "Cashback fetched successfully",
+            cashback,
+        });
+    }
+    catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.getAllCashback = getAllCashback;
+const changeCashbackActiveStatus = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { isActive, id } = req.body;
+        // Validate inputs
+        if (!id) {
+            res.status(400).json({
+                message: "Cashback ID is required",
+            });
+            return;
+        }
+        if (isActive === undefined) {
+            res.status(400).json({
+                message: "Active status is required",
+            });
+            return;
+        }
+        // Find and update cashback status
+        const cashback = yield cashback_model_1.default.findById(id);
+        if (!cashback) {
+            res.status(404).json({
+                message: "Cashback not found",
+            });
+            return;
+        }
+        // Update the status
+        cashback.isActive = isActive;
+        yield cashback.save();
+        res.status(200).json({
+            message: `Cashback ${isActive ? 'activated' : 'deactivated'} successfully`,
+            cashback
+        });
+    }
+    catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.changeCashbackActiveStatus = changeCashbackActiveStatus;

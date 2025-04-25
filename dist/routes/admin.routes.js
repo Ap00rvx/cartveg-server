@@ -25,4 +25,7 @@ router.post("/coupon/create", admin_middleware_1.adminMiddleware, admin_controll
 router.get("/coupon", admin_middleware_1.adminMiddleware, admin_controller_1.getAllCoupons);
 router.put("/coupon/update", admin_middleware_1.adminMiddleware, admin_controller_1.updateCouponDetails);
 router.put("/coupon/status", admin_middleware_1.adminMiddleware, admin_controller_1.changeCouponStatus);
+router.post("/cashback/create", admin_middleware_1.adminMiddleware, admin_controller_1.createCashback);
+router.get("/cashback", admin_middleware_1.adminMiddleware, admin_controller_1.getAllCashback);
+router.put("/cashback/status", admin_middleware_1.adminMiddleware, admin_controller_1.changeCashbackActiveStatus);
 exports.default = router;

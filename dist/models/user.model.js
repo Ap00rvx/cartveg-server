@@ -25,6 +25,11 @@ const userSchema = new mongoose_1.default.Schema({
     orders: {
         type: [String], //list of string
         default: [],
+    },
+    referralCode: { type: String, default: "", unique: true },
+    referredBy: {
+        type: String,
+        default: null,
     }
 }, {
     timestamps: true,

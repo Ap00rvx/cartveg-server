@@ -9,6 +9,8 @@ export interface IUser {
     dob?: Date; 
     isActivate?: boolean;
     orders?: string[];
+    referralCode?: string;
+    referredBy?: string;   
 }
 export interface IAddress {
     flatno: string;
