@@ -353,7 +353,53 @@ export const addAddress = async (req: Request, res: Response): Promise<void> => 
     res.status(500).json(response); // Send error response
   }
 };
+export const removeAddress  = async (req: Request, res: Response): Promise<void> => {
+  try{
+    const {index} = req.body; // Extract address ID from request body
+    if (index === undefined) {
+      // Validate address ID presence
+      res.status(400).json({ msg: "Address index is required" });
+      return;
+    }
+    const tokenEmail = (req as any).user?.email; // Get email from JWT token
+    if (!tokenEmail) {
+      // Check if user is authenticated
+      res.status(401).json({ msg: "Unauthorized" });
+      return;
+    }
+    const user = await User.findOne({ email: tokenEmail }); // Find user by email
+    if (!user) {
+      // Ensure user exists
+      res.status(400).json({ msg: "User not found" });
+      return;
+    }
+    if (!user.addresses || user.addresses.length <= index) {
+      // Validate address ID
+      res.status(400).json({ msg: "Invalid address index" });
+      return;
+    }
+    user.addresses.splice(index, 1); // Remove address from array
+    await user.save(); // Save updated user
 
+    const successResponse: SuccessResponse = {
+      message: "Address removed successfully",
+      statusCode: 200,
+      data: user,
+    };
+
+    res.status(200).json(successResponse); // Send success response
+
+  }catch(err:any){
+    console.error("Error removing address:", err); // Log error
+    const response: InterServerError = {
+      message: err.message,
+      statusCode: 500,
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    };
+    res.status(500).json(response); // Send error response
+  }
+
+};
 /**
  * Fetches products from stores within delivery radius of the user's selected address.
  * @param req - Express request object containing address index.

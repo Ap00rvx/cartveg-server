@@ -13,6 +13,7 @@ export interface IUser {
     referredBy?: string;   
 }
 export interface IAddress {
+    
     flatno: string;
     street: string;
     city: string

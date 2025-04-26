@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getActiveCashbacks = exports.addAddress = exports.saveUserDetails = exports.getUserDetails = exports.saveFCMToken = exports.verifyOtp = exports.resendOtp = exports.authenticate = void 0;
+exports.getActiveCashbacks = exports.removeAddress = exports.addAddress = exports.saveUserDetails = exports.getUserDetails = exports.saveFCMToken = exports.verifyOtp = exports.resendOtp = exports.authenticate = void 0;
 const user_model_1 = __importDefault(require("../models/user.model"));
 const otp_model_1 = __importDefault(require("../models/otp.model"));
 const nodemailer_1 = __importDefault(require("../config/nodemailer"));
@@ -353,6 +353,52 @@ const addAddress = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 });
 exports.addAddress = addAddress;
+const removeAddress = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const { index } = req.body; // Extract address ID from request body
+        if (index === undefined) {
+            // Validate address ID presence
+            res.status(400).json({ msg: "Address index is required" });
+            return;
+        }
+        const tokenEmail = (_a = req.user) === null || _a === void 0 ? void 0 : _a.email; // Get email from JWT token
+        if (!tokenEmail) {
+            // Check if user is authenticated
+            res.status(401).json({ msg: "Unauthorized" });
+            return;
+        }
+        const user = yield user_model_1.default.findOne({ email: tokenEmail }); // Find user by email
+        if (!user) {
+            // Ensure user exists
+            res.status(400).json({ msg: "User not found" });
+            return;
+        }
+        if (!user.addresses || user.addresses.length <= index) {
+            // Validate address ID
+            res.status(400).json({ msg: "Invalid address index" });
+            return;
+        }
+        user.addresses.splice(index, 1); // Remove address from array
+        yield user.save(); // Save updated user
+        const successResponse = {
+            message: "Address removed successfully",
+            statusCode: 200,
+            data: user,
+        };
+        res.status(200).json(successResponse); // Send success response
+    }
+    catch (err) {
+        console.error("Error removing address:", err); // Log error
+        const response = {
+            message: err.message,
+            statusCode: 500,
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        };
+        res.status(500).json(response); // Send error response
+    }
+});
+exports.removeAddress = removeAddress;
 /**
  * Fetches products from stores within delivery radius of the user's selected address.
  * @param req - Express request object containing address index.
