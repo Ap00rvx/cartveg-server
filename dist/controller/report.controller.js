@@ -161,7 +161,42 @@ class ReportController {
                     date: formattedQueryDate,
                 }).lean();
                 if (!report) {
-                    res.status(404).json({ error: 'No report found for the given store and date' });
+                    // create empty report
+                    const newReport = new report_models_1.default({
+                        store_id: new mongoose_1.default.Types.ObjectId(storeId),
+                        date: formattedQueryDate,
+                        total_sale_amount: 0,
+                        total_purchase_cost: 0,
+                        total_fixed_cost: 0,
+                        labour_cost: 0,
+                        packaging_cost: 0,
+                        net_profit_or_loss: 0,
+                        status: 'Loss',
+                        most_selling_product_id: null,
+                        most_selling_quantity: 0,
+                        total_orders: 0,
+                        avg_order_value: 0,
+                        created_at: new Date().toISOString(),
+                    });
+                    yield newReport.save();
+                    res.status(200).json({
+                        message: 'No report found for the given store and date. Created an empty report.',
+                        report: {
+                            store_id: newReport.store_id.toString(),
+                            date: newReport.date,
+                            total_sale_amount: 0,
+                            total_purchase_cost: 0,
+                            total_fixed_cost: 0,
+                            labour_cost: 0,
+                            packaging_cost: 0,
+                            net_profit_or_loss: 0,
+                            status: 'Loss',
+                            most_selling_product_id: null,
+                            most_selling_quantity: 0,
+                            total_orders: 0,
+                            avg_order_value: 0,
+                        },
+                    });
                     return;
                 }
                 res.status(200).json({
@@ -215,7 +250,25 @@ class ReportController {
                     date: formattedQueryDate,
                 }).lean();
                 if (!purchaseReport) {
-                    res.status(404).json({ error: 'No purchase report found for the given store and date' });
+                    // create empty report 
+                    const newPurchaseReport = new purchase_model_1.PurchaseModel({
+                        store_id: new mongoose_1.default.Types.ObjectId(storeId),
+                        date: formattedQueryDate,
+                        products: [],
+                        total_cost: 0,
+                        total_quantity: 0,
+                    });
+                    yield newPurchaseReport.save();
+                    res.status(200).json({
+                        message: 'No purchase report found for the given store and date. Created an empty report.',
+                        report: {
+                            store_id: newPurchaseReport.store_id.toString(),
+                            date: newPurchaseReport.date,
+                            products: [],
+                            total_cost: 0,
+                            total_quantity: 0,
+                        },
+                    });
                     return;
                 }
                 res.status(200).json({

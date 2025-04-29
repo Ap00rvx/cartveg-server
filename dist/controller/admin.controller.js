@@ -23,7 +23,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.changeCashbackActiveStatus = exports.getAllCashback = exports.createCashback = exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
+exports.updateAppDetails = exports.createAppDetails = exports.updateAdmin = exports.getAllAdmins = exports.changeCashbackActiveStatus = exports.getAllCashback = exports.createCashback = exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -38,6 +38,7 @@ const interface_1 = require("../types/interface/interface");
 const store_model_1 = require("../models/store.model");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const cashback_model_1 = __importDefault(require("../models/cashback.model"));
+const app_model_1 = require("../models/app.model");
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const products = req.body;
@@ -1161,3 +1162,160 @@ const changeCashbackActiveStatus = (req, res) => __awaiter(void 0, void 0, void 
     }
 });
 exports.changeCashbackActiveStatus = changeCashbackActiveStatus;
+const getAllAdmins = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { page = '1', limit = '10', role, isActive } = req.query;
+        // Parse pagination parameters
+        const pageNumber = parseInt(page, 10);
+        const pageSize = parseInt(limit, 10);
+        const skip = (pageNumber - 1) * pageSize;
+        // Build query
+        const query = {};
+        if (role)
+            query.role = role;
+        if (isActive !== undefined)
+            query.isActivate = isActive === 'true';
+        // Execute query with pagination
+        const [admins, total] = yield Promise.all([
+            admin_model_1.Admin.find(query)
+                .select('-password')
+                .skip(skip)
+                .limit(pageSize)
+                .populate('storeId', 'name')
+                .lean(),
+            admin_model_1.Admin.countDocuments(query)
+        ]);
+        // Calculate pagination metadata
+        const totalPages = Math.ceil(total / pageSize);
+        res.status(200).json({
+            success: true,
+            data: admins,
+            pagination: {
+                currentPage: pageNumber,
+                pageSize,
+                totalItems: total,
+                totalPages
+            }
+        });
+    }
+    catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching admins',
+            error: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
+exports.getAllAdmins = getAllAdmins;
+// Update admin details
+const updateAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.query;
+        const updateData = req.body;
+        // Prevent updating certain fields
+        const restrictedFields = ['password', 'isSuperAdmin', 'createdAt', 'updatedAt'];
+        restrictedFields.forEach(field => delete updateData[field]);
+        // Validate role if provided
+        if (updateData.role && !Object.values(interface_1.AdminRole).includes(updateData.role)) {
+            res.status(400).json({
+                success: false,
+                message: 'Invalid admin role'
+            });
+            return;
+        }
+        // If updating role to SuperAdmin, remove storeId requirement
+        if (updateData.role === interface_1.AdminRole.SuperAdmin) {
+            updateData.storeId = undefined;
+        }
+        // Find and update admin
+        const updatedAdmin = yield admin_model_1.Admin.findByIdAndUpdate(id, { $set: updateData }, { new: true, runValidators: true }).select('-password');
+        if (!updatedAdmin) {
+            res.status(404).json({
+                success: false,
+                message: 'Admin not found'
+            });
+            return;
+        }
+        res.status(200).json({
+            success: true,
+            data: updatedAdmin,
+            message: 'Admin updated successfully'
+        });
+    }
+    catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error updating admin',
+            error: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
+exports.updateAdmin = updateAdmin;
+const createAppDetails = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { appName, deliveryTime, bannerImages, privacyPolicy, termsAndConditions, aboutUs, address, contactno, email, refAmount } = req.body;
+        const appDetails = yield app_model_1.AppDetails.create({
+            appName,
+            deliveryTime,
+            bannerImages,
+            privacyPolicy,
+            termsAndConditions,
+            aboutUs,
+            address,
+            contactno,
+            email,
+            refAmount
+        });
+        res.status(201).json({
+            message: "App details created successfully",
+            appDetails,
+        });
+        // Validate required fields
+    }
+    catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.createAppDetails = createAppDetails;
+const updateAppDetails = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { appName, deliveryTime, bannerImages, privacyPolicy, termsAndConditions, aboutUs, address, contactno, email, refAmount } = req.body;
+        //update only provided fields 
+        const updateData = {};
+        // if (appName) updateData.appName = appName;
+        if (deliveryTime)
+            updateData.deliveryTime = deliveryTime;
+        if (bannerImages)
+            updateData.bannerImages = bannerImages;
+        if (privacyPolicy)
+            updateData.privacyPolicy = privacyPolicy;
+        if (termsAndConditions)
+            updateData.termsAndConditions = termsAndConditions;
+        if (aboutUs)
+            updateData.aboutUs = aboutUs;
+        if (address)
+            updateData.address = address;
+        if (contactno)
+            updateData.contactno = contactno;
+        if (email)
+            updateData.email = email;
+        if (refAmount)
+            updateData.refAmount = refAmount;
+        // Find and update app details
+        const appDetails = yield app_model_1.AppDetails.findOneAndUpdate({ appName }, Object.assign({}, updateData));
+        res.status(200).json({
+            message: "App details updated successfully",
+            appDetails,
+        });
+    }
+    catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.updateAppDetails = updateAppDetails;

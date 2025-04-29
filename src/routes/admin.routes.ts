@@ -1,4 +1,4 @@
-import { sendNotification,createAdmin,createStore,getAllOrders,updateUserDetails,createMultipleProducts,deleteMultipleProducts,getProductById,getAllProducts,searchProducts,getAllUsers,deleteUser,getAllStores, updateStoreDetails,createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser, adminLogin, assignStoreManager, createCashback,changeCashbackActiveStatus,getAllCashback} from "../controller/admin.controller";
+import { sendNotification,createAdmin,createStore,getAllOrders,updateUserDetails,createMultipleProducts,deleteMultipleProducts,getProductById,getAllProducts,searchProducts,getAllUsers,deleteUser,getAllStores, updateStoreDetails,createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser, adminLogin, assignStoreManager, createCashback,changeCashbackActiveStatus,getAllCashback,getAllAdmins,updateAdmin,createAppDetails,updateAppDetails} from "../controller/admin.controller";
 import { Router } from "express";
 import { adminMiddleware } from "../middleware/admin.middleware";
 import uploadBuffer from "../config/csv-buffer";
@@ -20,7 +20,12 @@ router.post("/create-store",adminMiddleware,createStore)
 router.post("/assign-store-manager",adminMiddleware,assignStoreManager); 
 router.put("/update-store",adminMiddleware,updateStoreDetails);
 
+router.post("/app/create",adminMiddleware,createAppDetails);
+router.put("/app/update",adminMiddleware,updateAppDetails);
+
 router.post("/login",adminLogin);
+router.get("/admins", adminMiddleware,getAllAdmins);
+router.put("/admin/update", adminMiddleware,updateAdmin); // Route to update a category
 
 router.get("/products", adminMiddleware,getAllProducts);
 router.get("/p/", adminMiddleware,getProductById);

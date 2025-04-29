@@ -1,10 +1,12 @@
-import { getWallet } from "../controller/wallet.controller";
+import { getWallet, applyReferralCode,generateReferralCode} from "../controller/wallet.controller";
 import { Router } from "express";
 
 const router = Router();
 
 
 router.get("/", getWallet); // Route to get wallet information
+router.post("/apply-referral-code", applyReferralCode); // Route to apply a referral code
+router.post("/generate-referral-code", generateReferralCode); // Route to generate a referral code
 
 
 

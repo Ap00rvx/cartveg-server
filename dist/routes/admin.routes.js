@@ -13,7 +13,11 @@ router.post("/create-admin", admin_middleware_1.adminMiddleware, admin_controlle
 router.post("/create-store", admin_middleware_1.adminMiddleware, admin_controller_1.createStore);
 router.post("/assign-store-manager", admin_middleware_1.adminMiddleware, admin_controller_1.assignStoreManager);
 router.put("/update-store", admin_middleware_1.adminMiddleware, admin_controller_1.updateStoreDetails);
+router.post("/app/create", admin_middleware_1.adminMiddleware, admin_controller_1.createAppDetails);
+router.put("/app/update", admin_middleware_1.adminMiddleware, admin_controller_1.updateAppDetails);
 router.post("/login", admin_controller_1.adminLogin);
+router.get("/admins", admin_middleware_1.adminMiddleware, admin_controller_1.getAllAdmins);
+router.put("/admin/update", admin_middleware_1.adminMiddleware, admin_controller_1.updateAdmin); // Route to update a category
 router.get("/products", admin_middleware_1.adminMiddleware, admin_controller_1.getAllProducts);
 router.get("/p/", admin_middleware_1.adminMiddleware, admin_controller_1.getProductById);
 router.get("/search", admin_middleware_1.adminMiddleware, admin_controller_1.searchProducts);

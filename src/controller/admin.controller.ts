@@ -21,7 +21,8 @@ import { Store } from "../models/store.model";
 import jwt from "jsonwebtoken";
 import { ICashback } from "../types/interface/i.cashback";
 import Cashback from "../models/cashback.model";
-
+import { IAppDetails } from "../types/interface/i.app-details";
+import { AppDetails } from "../models/app.model";
 
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -1295,6 +1296,175 @@ export const changeCashbackActiveStatus = async (req: Request, res: Response): P
             cashback
         });
 
+    }catch(err:any){
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+}
+interface PaginationQuery {
+    page?: string;
+    limit?: string;
+    role?: AdminRole;
+    isActive?: string;
+  }
+  
+export const getAllAdmins = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { page = '1', limit = '10', role, isActive }: PaginationQuery = req.query;
+      
+      // Parse pagination parameters
+      const pageNumber = parseInt(page, 10);
+      const pageSize = parseInt(limit, 10);
+      const skip = (pageNumber - 1) * pageSize;
+  
+      // Build query
+      const query: any = {};
+      if (role) query.role = role;
+      if (isActive !== undefined) query.isActivate = isActive === 'true';
+  
+      // Execute query with pagination
+      const [admins, total] = await Promise.all([
+        Admin.find(query)
+          .select('-password')
+          .skip(skip)
+          .limit(pageSize)
+          .populate('storeId', 'name')
+          .lean(),
+        Admin.countDocuments(query)
+      ]);
+  
+      // Calculate pagination metadata
+      const totalPages = Math.ceil(total / pageSize);
+  
+      res.status(200).json({
+        success: true,
+        data: admins,
+        pagination: {
+          currentPage: pageNumber,
+          pageSize,
+          totalItems: total,
+          totalPages
+        }
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error fetching admins',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  };
+  
+  // Update admin details
+  export const updateAdmin = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.query;
+      const updateData: Partial<IAdmin> = req.body;
+  
+      // Prevent updating certain fields
+      const restrictedFields = ['password', 'isSuperAdmin', 'createdAt', 'updatedAt'];
+      restrictedFields.forEach(field => delete updateData[field as keyof IAdmin]);
+  
+      // Validate role if provided
+      if (updateData.role && !Object.values(AdminRole).includes(updateData.role)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid admin role'
+        });
+        return;
+      }
+  
+      // If updating role to SuperAdmin, remove storeId requirement
+      if (updateData.role === AdminRole.SuperAdmin) {
+        updateData.storeId = undefined;
+      }
+  
+      // Find and update admin
+      const updatedAdmin = await Admin.findByIdAndUpdate(
+        id,
+        { $set: updateData },
+        { new: true, runValidators: true }
+      ).select('-password');
+  
+      if (!updatedAdmin) {
+        res.status(404).json({
+          success: false,
+          message: 'Admin not found'
+        });
+        return;
+      }
+  
+      res.status(200).json({
+        success: true,
+        data: updatedAdmin,
+        message: 'Admin updated successfully'
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error updating admin',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  };
+
+  export const createAppDetails = async (req: Request, res: Response): Promise<void> => {
+    try{
+        const { appName, deliveryTime, bannerImages, privacyPolicy,termsAndConditions,aboutUs,address,contactno,email,refAmount } = req.body as Partial<IAppDetails>;
+        const appDetails = await AppDetails.create({
+            appName,
+            deliveryTime,
+            bannerImages,
+            privacyPolicy,
+            termsAndConditions,
+            aboutUs,
+            address,
+            contactno,
+            email,
+            refAmount
+        });
+        res.status(201).json({
+            message: "App details created successfully",
+            appDetails,
+        });
+        // Validate required fields
+    }catch(err:any){
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+  }
+
+export const updateAppDetails = async (req: Request, res: Response): Promise<void> => {
+    try{
+        const { appName, deliveryTime, bannerImages, privacyPolicy,termsAndConditions,aboutUs,address,contactno,email,refAmount } = req.body as Partial<IAppDetails>;
+       //update only provided fields 
+        const updateData: Partial<IAppDetails> = {};
+        // if (appName) updateData.appName = appName;
+        if (deliveryTime) updateData.deliveryTime = deliveryTime;
+        if (bannerImages) updateData.bannerImages = bannerImages;
+        if (privacyPolicy) updateData.privacyPolicy = privacyPolicy;
+        if (termsAndConditions) updateData.termsAndConditions = termsAndConditions;
+        if (aboutUs) updateData.aboutUs = aboutUs;
+        if (address) updateData.address = address;
+        if (contactno) updateData.contactno = contactno;
+        if(email) updateData.email = email;
+        if(refAmount) updateData.refAmount = refAmount;
+
+
+        // Find and update app details
+        const appDetails = await AppDetails.findOneAndUpdate({appName},{
+            ...updateData
+        });
+
+
+        res.status(200).json({
+            message: "App details updated successfully",
+            appDetails,
+        });
     }catch(err:any){
         res.status(500).json({
             message: "Internal server error",

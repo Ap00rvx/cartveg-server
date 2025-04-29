@@ -235,7 +235,7 @@ class OrderController {
       } else {
         const newReport = new ZoneDailyProfitLossModel({
           store_id: storeId,
-          date: orderDate,
+          date: formattedDate,
           total_sale_amount: order.totalAmount,
           total_purchase_cost: 0,
           total_fixed_cost: 0,
