@@ -252,9 +252,9 @@ const generateReferralCode = (req, res) => __awaiter(void 0, void 0, void 0, fun
         }
         // Check if user already has a referral code
         if (user.referralCode) {
-            res.status(400).json({
+            res.status(200).json({
                 message: "User already has a referral code",
-                statusCode: 400,
+                statusCode: 200,
                 data: { referralCode: user.referralCode }
             });
             return;

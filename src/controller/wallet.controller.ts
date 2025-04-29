@@ -266,9 +266,9 @@ export const generateReferralCode = async (
 
     // Check if user already has a referral code
     if (user.referralCode) {
-      res.status(400).json({
+      res.status(200).json({
         message: "User already has a referral code",
-        statusCode: 400,
+        statusCode: 200,
         data: { referralCode: user.referralCode }
       });
       return;
