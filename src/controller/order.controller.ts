@@ -9,6 +9,7 @@ import Coupon from "../models/coupon.model";
 import { IOrder, IInvoice, OrderStatus, PaymentStatus } from "../types/interface/interface";
 import Product from "../models/product.model";
 import ZoneDailyProfitLossModel from "../models/report.models";
+import { UserWallet } from "../models/wallet.model";
 
 // Helper function to calculate total amount and items
 interface ProductDetails {
@@ -55,6 +56,7 @@ class OrderController {
       isCashOnDelivery,
       deliveryAddress,
       appliedCoupon,
+      walletAmount = 0, // New field for wallet amount to use
     } = req.body;
 
     try {
@@ -141,6 +143,37 @@ class OrderController {
         await coupon.save({ session });
       }
 
+      // Validate and apply wallet amount
+      let walletAmountUsed = 0;
+      if (walletAmount > 0) {
+        const wallet = await UserWallet.findOne({ userId }).session(session);
+        if (!wallet) {
+          throw new Error("Wallet not found for this user");
+        }
+        if (wallet.current_amount < walletAmount) {
+          throw new Error(`Insufficient wallet balance. Available: ${wallet.current_amount}, Requested: ${walletAmount}`);
+        }
+        const finalAmountAfterDiscount = totalAmount - discountAmount;
+        walletAmountUsed = Math.min(walletAmount, finalAmountAfterDiscount); // Use wallet amount up to order total
+        if (walletAmountUsed <= 0) {
+          throw new Error("Wallet amount cannot cover any part of the order after discounts");
+        }
+
+        // Deduct wallet amount
+        wallet.current_amount -= walletAmountUsed;
+
+        // Record transaction in wallet history
+        wallet.transaction_history.push({
+          amount: walletAmountUsed,
+          type: "debit",
+          date: new Date(),
+          description: `Order payment for order ORD-${Date.now()}`,
+          transactionId: new mongoose.Types.ObjectId(),
+        });
+
+        await wallet.save({ session });
+      }
+
       // Generate orderId and invoiceId
       const timestamp = Date.now();
       const orderId = `ORD-${timestamp}`;
@@ -152,7 +185,7 @@ class OrderController {
         userId: new mongoose.Types.ObjectId(userId),
         products,
         storeId: new mongoose.Types.ObjectId(storeId),
-        totalAmount: totalAmount - discountAmount,
+        totalAmount: totalAmount - discountAmount - walletAmountUsed, // Adjust total after wallet
         shippingAmount: 50,
         totalItems,
         isCashOnDelivery,
@@ -165,6 +198,7 @@ class OrderController {
               discountAmount,
             }
           : undefined,
+        wallet_amount_used: walletAmountUsed, // Record wallet amount used
         status: OrderStatus.Placed,
         paymentStatus: isCashOnDelivery ? PaymentStatus.Pending : PaymentStatus.Pending,
         rzpOrderId: isCashOnDelivery ? undefined : `RZP-${timestamp}`,
@@ -196,7 +230,7 @@ class OrderController {
       await inventory.save({ session });
 
       // Update ZoneDailyProfitLossModel for the order date
-      const orderDate= order.orderDate;
+      const orderDate = order.orderDate;
       const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
 
       console.log("Formatted date:", formattedDate); // Debugging 
@@ -261,15 +295,16 @@ class OrderController {
           email: user.email,
           phone: user.phone,
         },
-        totalAmount: totalAmount - discountAmount,
+        totalAmount: totalAmount - discountAmount - walletAmountUsed, // Adjust total after wallet
         paymentStatus: isCashOnDelivery ? PaymentStatus.Pending : PaymentStatus.Pending,
         shippingAmount: 50,
         discount: discountAmount,
+        walletAmount: walletAmountUsed, // Record wallet amount in invoice
         billingAddress: deliveryAddress,
         shippingAddress: deliveryAddress,
         orderDate: new Date(),
         items: itemsForInvoice,
-        paymentMode: isCashOnDelivery ? "Cash on Delivery" : "Online Payment",
+        paymentMode: isCashOnDelivery ? "Cash on Delivery" : walletAmountUsed >= (totalAmount - discountAmount) ? "Wallet" : "Online Payment",
       };
 
       const invoice = new Invoice(invoiceData);
@@ -288,6 +323,18 @@ class OrderController {
         if (coupon && coupon.usedUsers.includes(userId)) {
           coupon.usedUsers = coupon.usedUsers.filter((id) => id !== userId);
           await coupon.save({ session });
+        }
+      }
+
+      // Revert wallet changes if wallet was used
+      if (walletAmount > 0) {
+        const wallet = await UserWallet.findOne({ userId }).session(session);
+        if (wallet && wallet.transaction_history.some(t => t.description.includes(`Order payment for order `))) {
+          wallet.current_amount += walletAmount;
+          wallet.transaction_history = wallet.transaction_history.filter(
+            t => !t.description.includes(`Order payment for order `)
+          );
+          await wallet.save({ session });
         }
       }
 
