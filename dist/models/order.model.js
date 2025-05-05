@@ -111,6 +111,11 @@ const orderSchema = new mongoose_1.default.Schema({
         code: { type: String }, // Optional
         discountAmount: { type: Number }, // Optional
     },
+    wallet_amount_used: {
+        type: Number,
+        default: 0,
+        min: 0,
+    },
     paymentStatus: {
         type: String,
         enum: interface_1.PaymentStatus,

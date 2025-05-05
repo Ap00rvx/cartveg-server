@@ -22,6 +22,7 @@ const coupon_model_1 = __importDefault(require("../models/coupon.model"));
 const interface_1 = require("../types/interface/interface");
 const product_model_1 = __importDefault(require("../models/product.model"));
 const report_models_1 = __importDefault(require("../models/report.models"));
+const wallet_model_1 = require("../models/wallet.model");
 const calculateOrderTotals = (products, session) => __awaiter(void 0, void 0, void 0, function* () {
     let totalAmount = 0;
     let totalItems = 0;
@@ -49,7 +50,8 @@ class OrderController {
             var _a, _b;
             const session = yield mongoose_1.default.startSession();
             session.startTransaction();
-            const { userId, products, storeId, isCashOnDelivery, deliveryAddress, appliedCoupon, } = req.body;
+            const { userId, products, storeId, isCashOnDelivery, deliveryAddress, appliedCoupon, walletAmount = 0, // New field for wallet amount to use
+             } = req.body;
             try {
                 // Validate required fields
                 if (!userId || !products || !products.length || !storeId || !deliveryAddress || isCashOnDelivery === undefined) {
@@ -121,6 +123,33 @@ class OrderController {
                     coupon.usedUsers.push(userId);
                     yield coupon.save({ session });
                 }
+                // Validate and apply wallet amount
+                let walletAmountUsed = 0;
+                if (walletAmount > 0) {
+                    const wallet = yield wallet_model_1.UserWallet.findOne({ userId }).session(session);
+                    if (!wallet) {
+                        throw new Error("Wallet not found for this user");
+                    }
+                    if (wallet.current_amount < walletAmount) {
+                        throw new Error(`Insufficient wallet balance. Available: ${wallet.current_amount}, Requested: ${walletAmount}`);
+                    }
+                    const finalAmountAfterDiscount = totalAmount - discountAmount;
+                    walletAmountUsed = Math.min(walletAmount, finalAmountAfterDiscount); // Use wallet amount up to order total
+                    if (walletAmountUsed <= 0) {
+                        throw new Error("Wallet amount cannot cover any part of the order after discounts");
+                    }
+                    // Deduct wallet amount
+                    wallet.current_amount -= walletAmountUsed;
+                    // Record transaction in wallet history
+                    wallet.transaction_history.push({
+                        amount: walletAmountUsed,
+                        type: "debit",
+                        date: new Date(),
+                        description: `Order payment for order ORD-${Date.now()}`,
+                        transactionId: new mongoose_1.default.Types.ObjectId(),
+                    });
+                    yield wallet.save({ session });
+                }
                 // Generate orderId and invoiceId
                 const timestamp = Date.now();
                 const orderId = `ORD-${timestamp}`;
@@ -131,7 +160,7 @@ class OrderController {
                     userId: new mongoose_1.default.Types.ObjectId(userId),
                     products,
                     storeId: new mongoose_1.default.Types.ObjectId(storeId),
-                    totalAmount: totalAmount - discountAmount,
+                    totalAmount: totalAmount - discountAmount - walletAmountUsed, // Adjust total after wallet
                     shippingAmount: 50,
                     totalItems,
                     isCashOnDelivery,
@@ -144,6 +173,7 @@ class OrderController {
                             discountAmount,
                         }
                         : undefined,
+                    wallet_amount_used: walletAmountUsed, // Record wallet amount used
                     status: interface_1.OrderStatus.Placed,
                     paymentStatus: isCashOnDelivery ? interface_1.PaymentStatus.Pending : interface_1.PaymentStatus.Pending,
                     rzpOrderId: isCashOnDelivery ? undefined : `RZP-${timestamp}`,
@@ -230,15 +260,16 @@ class OrderController {
                         email: user.email,
                         phone: user.phone,
                     },
-                    totalAmount: totalAmount - discountAmount,
+                    totalAmount: totalAmount - discountAmount - walletAmountUsed, // Adjust total after wallet
                     paymentStatus: isCashOnDelivery ? interface_1.PaymentStatus.Pending : interface_1.PaymentStatus.Pending,
                     shippingAmount: 50,
                     discount: discountAmount,
+                    walletAmount: walletAmountUsed, // Record wallet amount in invoice
                     billingAddress: deliveryAddress,
                     shippingAddress: deliveryAddress,
                     orderDate: new Date(),
                     items: itemsForInvoice,
-                    paymentMode: isCashOnDelivery ? "Cash on Delivery" : "Online Payment",
+                    paymentMode: isCashOnDelivery ? "Cash on Delivery" : walletAmountUsed >= (totalAmount - discountAmount) ? "Wallet" : "Online Payment",
                 };
                 const invoice = new invoice_model_1.default(invoiceData);
                 yield invoice.save({ session });
@@ -256,6 +287,15 @@ class OrderController {
                     if (coupon && coupon.usedUsers.includes(userId)) {
                         coupon.usedUsers = coupon.usedUsers.filter((id) => id !== userId);
                         yield coupon.save({ session });
+                    }
+                }
+                // Revert wallet changes if wallet was used
+                if (walletAmount > 0) {
+                    const wallet = yield wallet_model_1.UserWallet.findOne({ userId }).session(session);
+                    if (wallet && wallet.transaction_history.some(t => t.description.includes(`Order payment for order `))) {
+                        wallet.current_amount += walletAmount;
+                        wallet.transaction_history = wallet.transaction_history.filter(t => !t.description.includes(`Order payment for order `));
+                        yield wallet.save({ session });
                     }
                 }
                 yield session.abortTransaction();

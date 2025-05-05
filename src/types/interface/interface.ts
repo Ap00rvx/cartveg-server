@@ -132,6 +132,7 @@ export interface IOrder {
         discountAmount: number;
     };
     paymentStatus: PaymentStatus; 
+    wallet_amount_used?:number;  
     shippingAmount :number; 
     rzpPaymentId?: string;
     rzpOrderId?: string;
