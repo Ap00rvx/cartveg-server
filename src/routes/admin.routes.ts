@@ -47,3 +47,6 @@ router.get("/cashback", adminMiddleware,getAllCashback);
 router.put("/cashback/status", adminMiddleware,changeCashbackActiveStatus);
 
 export default router;
+
+
+/// route 
