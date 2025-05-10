@@ -451,24 +451,33 @@ const getAllOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* (
 exports.getAllOrders = getAllOrders;
 const sendNotification = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { fcm, title, body, } = req.body;
-        if (!fcm || !title || !body) {
-            res.status(400).json({ message: "FCM token, title, and body are required" });
+        const { fcmTokens, title, body } = req.body;
+        if (!fcmTokens || !Array.isArray(fcmTokens) || fcmTokens.length === 0 || !title || !body) {
+            res.status(400).json({ message: "Array of FCM tokens, title, and body are required" });
             return;
         }
-        // Send notification logic here (e.g., using Firebase Cloud Messaging)
-        const message = {
+        const messages = fcmTokens.map((token) => ({
             notification: {
                 title,
                 body,
             },
-            token: fcm,
-        };
-        yield firebase_admin_1.default.messaging().send(message);
-        res.status(200).json({ message: "Notification sent successfully" });
+            token,
+        }));
+        const batchResponse = yield firebase_admin_1.default.messaging().sendEachForMulticast({ tokens: fcmTokens, notification: { title, body } });
+        const successCount = batchResponse.successCount;
+        const failureCount = batchResponse.failureCount;
+        const responses = batchResponse.responses.map((resp, idx) => ({
+            token: fcmTokens[idx],
+            success: resp.success,
+            error: resp.error ? resp.error.message : null,
+        }));
+        res.status(200).json({
+            message: `Notifications sent: ${successCount} succeeded, ${failureCount} failed`,
+            details: responses,
+        });
     }
     catch (err) {
-        console.error("Error sending notification:", err);
+        console.error("Error sending notifications:", err);
         res.status(500).json({
             message: "Internal server error",
             stack: process.env.NODE_ENV === "development" ? err.stack : undefined,

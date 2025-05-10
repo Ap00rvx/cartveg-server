@@ -891,6 +891,15 @@ interface ProcessingResult {
  * @param req Express request object
  * @param res Express response object
  */
+
+
+interface ProcessingResult {
+  processedRows: string[];
+  addedProducts: { productId: string; name: string }[];
+  updatedProducts: { productId: string; name: string }[];
+  errors: { row: number; message: string }[];
+}
+
 export const uploadInventoryCsv = async (req: Request, res: Response): Promise<void> => {
   try {
     // Validate storeId
@@ -919,12 +928,11 @@ export const uploadInventoryCsv = async (req: Request, res: Response): Promise<v
     const csvString = req.file.buffer.toString('utf8');
     console.log(`CSV sample: ${csvString.substring(0, 200)}`);
 
-    // Parse CSV using PapaParse with proper typing
+    // Parse CSV using PapaParse
     const parseResult = Papa.parse<CSVRow>(csvString, {
       header: true,
       skipEmptyLines: true,
       transformHeader: (header: string): string => header.trim(),
-      // transformHeader: (header: string): string => header.trim(),
     });
 
     if (parseResult.errors && parseResult.errors.length > 0) {
@@ -949,43 +957,40 @@ export const uploadInventoryCsv = async (req: Request, res: Response): Promise<v
       errors: [],
     };
 
-    // Get or create inventory for the store
+    // Extract and validate product IDs
+    const productIds = rows
+      .map((row, index) => {
+        const productId = row.productId?.trim();
+        if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
+          result.errors.push({ row: index + 1, message: `Invalid productId: ${productId || 'missing'}` });
+          return null;
+        }
+        return productId;
+      })
+      .filter((id): id is string => id !== null);
+
+    // Fetch all products in one query
+    const validProducts = await Product.find({ _id: { $in: productIds.map((id) => new mongoose.Types.ObjectId(id)) } }).lean();
+    const validProductIds = new Set(validProducts.map((p) => p._id.toString()));
+
+    // Prepare inventory updates
     const objectIdStoreId = new mongoose.Types.ObjectId(storeId);
-    let inventory = await Inventory.findOne({ storeId: objectIdStoreId }) as InventoryDocument | null;
-    
-    if (!inventory) {
-      inventory = new Inventory({
-        storeId: objectIdStoreId,
-        products: [],
-      }) as InventoryDocument;
-      await inventory.save();
-      console.log(`Created new inventory for store: ${storeId}`);
-    }
+    const productsToAdd: { productId: mongoose.Types.ObjectId; quantity: number; threshold: number; availability: boolean }[] = [];
+    const productsToUpdate: { productId: string; quantity: number; threshold: number; availability: boolean }[] = [];
 
     // Process each row
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const rowIndex = i + 1; // 1-based index for error reporting
-      
+      const rowIndex = i + 1;
+
       try {
-        console.log(`Processing row ${rowIndex}:`, row);
-        
-        // Extract and validate product ID
         const productId = row.productId?.trim();
-        if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
-          result.errors.push({ row: rowIndex, message: `Invalid productId: ${productId}` });
-          continue;
+        if (!productId || !validProductIds.has(productId)) {
+          continue; // Skip invalid or non-existent product IDs
         }
 
-        // Verify product exists
-        const product = await Product.findById(productId).lean() as ProductDocument | null;
-        if (!product) {
-          result.errors.push({ row: rowIndex, message: `Product not found: ${productId}` });
-          continue;
-        }
-
-        // Extract product name for logging only
-        const productName = row.name?.trim() || product.name || 'Unknown';
+        // Extract product name for logging
+        const productName = row.name?.trim() || validProducts.find((p) => p._id.toString() === productId)?.name || 'Unknown';
 
         // Parse and validate quantity
         const quantityValue = row.quantity?.toString().trim() || '';
@@ -1006,38 +1011,21 @@ export const uploadInventoryCsv = async (req: Request, res: Response): Promise<v
         // Parse and validate availability
         const availabilityValue = row.availability?.toString().toLowerCase().trim() || '';
         if (availabilityValue !== 'true' && availabilityValue !== 'false') {
-          result.errors.push({ row: rowIndex, message: `Invalid availability: ${row.availability}` });
+          result.errors.push({ row: rowIndex, message: `Invalid availability: ${availabilityValue}` });
           continue;
         }
         const isAvailable = availabilityValue === 'true';
 
-        // Create product inventory object
-        const productInventory: ProductInventoryItem = {
+        // Prepare product inventory object
+        const productInventory = {
           productId: new mongoose.Types.ObjectId(productId),
           quantity,
           threshold,
           availability: isAvailable,
         };
 
-        // Check if product exists in inventory
-        const existingProductIndex = inventory.products.findIndex(
-          (item) => item.productId.toString() === productId
-        );
-
-        if (existingProductIndex !== -1) {
-          // Update existing product
-          inventory.products[existingProductIndex] = {
-            ...inventory.products[existingProductIndex],
-            ...productInventory,
-          };
-          result.updatedProducts.push({ productId, name: productName });
-          console.log(`Updated product: ${productId} (${productName})`);
-        } else {
-          // Add new product to inventory
-          inventory.products.push(productInventory);
-          result.addedProducts.push({ productId, name: productName });
-          console.log(`Added product: ${productId} (${productName})`);
-        }
+        productsToAdd.push(productInventory);
+        productsToUpdate.push({ productId, quantity, threshold, availability: isAvailable });
 
         result.processedRows.push(productId);
       } catch (err) {
@@ -1047,17 +1035,71 @@ export const uploadInventoryCsv = async (req: Request, res: Response): Promise<v
       }
     }
 
-    // Save the updated inventory if any changes were made
-    if (result.processedRows.length > 0) {
+    // Perform a single inventory update
+    if (productsToAdd.length > 0) {
       try {
-        await inventory.save();
-        console.log('Inventory saved successfully');
+        // Check if inventory exists, create if not
+        let inventory = await Inventory.findOne({ storeId: objectIdStoreId });
+        if (!inventory) {
+          inventory = new Inventory({
+            storeId: objectIdStoreId,
+            products: [],
+          });
+          await inventory.save();
+          console.log(`Created new inventory for store: ${storeId}`);
+        }
+
+        // Determine which products are new vs. existing
+        const existingProductIds = new Set(inventory.products.map((p) => p.productId.toString()));
+        const newProducts = productsToAdd.filter((item) => !existingProductIds.has(item.productId.toString()));
+        const updateProducts = productsToUpdate.filter((item) => existingProductIds.has(item.productId));
+
+        // Build update operation
+        const updateOperation: any = {};
+        if (updateProducts.length > 0) {
+          updateOperation.$set = updateProducts.reduce((acc: Record<string, any>, item) => {
+            acc[`products.$[elem${item.productId}].quantity`] = item.quantity;
+            acc[`products.$[elem${item.productId}].threshold`] = item.threshold;
+            acc[`products.$[elem${item.productId}].availability`] = item.availability;
+            return acc;
+          }, {} as Record<string, any>);
+        }
+        if (newProducts.length > 0) {
+          updateOperation.$push = {
+            products: { $each: newProducts },
+          };
+        }
+
+        // Perform the update
+        if (Object.keys(updateOperation).length > 0) {
+          await Inventory.findOneAndUpdate(
+            { storeId: objectIdStoreId },
+            updateOperation,
+            {
+              arrayFilters: updateProducts.map((item) => ({
+                [`elem${item.productId}.productId`]: new mongoose.Types.ObjectId(item.productId),
+              })),
+              new: true,
+            }
+          );
+          console.log('Inventory updated successfully');
+        }
+
+        // Refine results
+        result.addedProducts = newProducts.map((item) => ({
+          productId: item.productId.toString(),
+          name: rows.find((row) => row.productId?.trim() === item.productId.toString())?.name?.trim() || 'Unknown',
+        }));
+        result.updatedProducts = updateProducts.map((item) => ({
+          productId: item.productId,
+          name: rows.find((row) => row.productId?.trim() === item.productId)?.name?.trim() || 'Unknown',
+        }));
       } catch (err) {
         const saveErr = err as Error;
-        console.error('Error saving inventory:', saveErr);
+        console.error('Error updating inventory:', saveErr);
         res.status(500).json({
           success: false,
-          message: 'Error saving inventory',
+          message: 'Error updating inventory',
           error: saveErr.message,
         });
         return;

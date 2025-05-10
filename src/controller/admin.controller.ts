@@ -503,31 +503,41 @@ export const getAllOrders = async (req: Request, res: Response): Promise<void> =
 };
 export const sendNotification = async (req: Request, res: Response): Promise<void> => {
     try {
-        const {fcm, title, body, } = req.body;
-        if (!fcm || !title || !body) {
-            res.status(400).json({ message: "FCM token, title, and body are required" });
+        const { fcmTokens, title, body } = req.body;
+        if (!fcmTokens || !Array.isArray(fcmTokens) || fcmTokens.length === 0 || !title || !body) {
+            res.status(400).json({ message: "Array of FCM tokens, title, and body are required" });
             return;
         }
-        // Send notification logic here (e.g., using Firebase Cloud Messaging)
-        
-        const message = {
+
+        const messages = fcmTokens.map((token: string) => ({
             notification: {
                 title,
                 body,
             },
-            token: fcm,
-        };
-        await admin.messaging().send(message);
-        res.status(200).json({ message: "Notification sent successfully" });
-    }catch(err:any){
-        console.error("Error sending notification:", err);
+            token,
+        }));
+
+        const batchResponse = await admin.messaging().sendEachForMulticast({ tokens: fcmTokens, notification: { title, body } });
+
+        const successCount = batchResponse.successCount;
+        const failureCount = batchResponse.failureCount;
+        const responses = batchResponse.responses.map((resp, idx) => ({
+            token: fcmTokens[idx],
+            success: resp.success,
+            error: resp.error ? resp.error.message : null,
+        }));
+
+        res.status(200).json({
+            message: `Notifications sent: ${successCount} succeeded, ${failureCount} failed`,
+            details: responses,
+        });
+    } catch (err: any) {
+        console.error("Error sending notifications:", err);
         res.status(500).json({
             message: "Internal server error",
             stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
         });
     }
-
-    
 }
  
 export const createCouponCode = async(req: Request, res: Response): Promise<void> => {

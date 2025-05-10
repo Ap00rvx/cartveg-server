@@ -33,3 +33,4 @@ router.post("/cashback/create", admin_middleware_1.adminMiddleware, admin_contro
 router.get("/cashback", admin_middleware_1.adminMiddleware, admin_controller_1.getAllCashback);
 router.put("/cashback/status", admin_middleware_1.adminMiddleware, admin_controller_1.changeCashbackActiveStatus);
 exports.default = router;
+/// route 
