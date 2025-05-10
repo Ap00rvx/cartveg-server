@@ -1,4 +1,4 @@
-import { sendNotification,createAdmin,createStore,getAllOrders,updateUserDetails,createMultipleProducts,deleteMultipleProducts,getProductById,getAllProducts,searchProducts,getAllUsers,deleteUser,getAllStores, updateStoreDetails,createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser, adminLogin, assignStoreManager, createCashback,changeCashbackActiveStatus,getAllCashback,getAllAdmins,updateAdmin,createAppDetails,updateAppDetails} from "../controller/admin.controller";
+import { sendNotification,createAdmin,createStore,getAllOrders,updateUserDetails,createMultipleProducts,deleteMultipleProducts,getProductById,getAllProducts,searchProducts,getAllUsers,deleteUser,getAllStores, updateStoreDetails,createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser, adminLogin, assignStoreManager, createCashback,changeCashbackActiveStatus,getAllCashback,getAllAdmins,updateAdmin,createAppDetails,updateAppDetails,changeOrderStatus} from "../controller/admin.controller";
 import { Router } from "express";
 import { adminMiddleware } from "../middleware/admin.middleware";
 import uploadBuffer from "../config/csv-buffer";
@@ -32,6 +32,8 @@ router.get("/p/", adminMiddleware,getProductById);
 router.get("/search", adminMiddleware,searchProducts);
 router.get("/users", adminMiddleware,getAllUsers);
 router.get("/orders", adminMiddleware,getAllOrders);
+router.put("/update/order", adminMiddleware,changeOrderStatus);
+
 
 router.get("/stores", adminMiddleware,getAllStores);
 router.delete("/user/delete",adminMiddleware,deleteUser);

@@ -23,7 +23,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateAppDetails = exports.createAppDetails = exports.updateAdmin = exports.getAllAdmins = exports.changeCashbackActiveStatus = exports.getAllCashback = exports.createCashback = exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
+exports.updateAppDetails = exports.createAppDetails = exports.updateAdmin = exports.getAllAdmins = exports.changeCashbackActiveStatus = exports.getAllCashback = exports.createCashback = exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.changeOrderStatus = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -31,14 +31,16 @@ const helpers_1 = require("../config/helpers");
 const cache_1 = __importDefault(require("../config/cache"));
 const order_model_1 = __importDefault(require("../models/order.model"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
+const interface_1 = require("../types/interface/interface");
 const mongoose_1 = __importDefault(require("mongoose"));
 const coupon_model_1 = __importDefault(require("../models/coupon.model"));
 const admin_model_1 = require("../models/admin.model");
-const interface_1 = require("../types/interface/interface");
+const interface_2 = require("../types/interface/interface");
 const store_model_1 = require("../models/store.model");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const cashback_model_1 = __importDefault(require("../models/cashback.model"));
 const app_model_1 = require("../models/app.model");
+const report_models_1 = __importDefault(require("../models/report.models"));
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const products = req.body;
@@ -349,6 +351,133 @@ const deleteUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 });
 exports.deleteUser = deleteUser;
+const changeOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const session = yield mongoose_1.default.startSession();
+    session.startTransaction();
+    try {
+        const { orderId, newStatus, storeId } = req.body;
+        // Validate inputs
+        if (!orderId || !newStatus || !storeId) {
+            throw new Error("orderId, newStatus, and storeId are required");
+        }
+        // Validate MongoDB ObjectId
+        if (!mongoose_1.default.Types.ObjectId.isValid(storeId)) {
+            throw new Error("Invalid StoreiD format");
+        }
+        // Validate newStatus
+        const validStatuses = Object.values(interface_1.OrderStatus);
+        if (!validStatuses.includes(newStatus)) {
+            throw new Error(`Invalid status. Must be one of: ${validStatuses.join(", ")}`);
+        }
+        // Find the order
+        const order = yield order_model_1.default.findOne({
+            orderId,
+            storeId: new mongoose_1.default.Types.ObjectId(storeId),
+        }).session(session);
+        if (!order) {
+            throw new Error("Order not found");
+        }
+        // Check if order is already cancelled
+        if (order.status === interface_1.OrderStatus.Cancelled) {
+            throw new Error("Cannot change status of a cancelled order");
+        }
+        // Define allowed status transitions
+        const allowedTransitions = {
+            [interface_1.OrderStatus.Placed]: [
+                interface_1.OrderStatus.Confirmed,
+                interface_1.OrderStatus.Shipped,
+                interface_1.OrderStatus.Cancelled,
+            ],
+            [interface_1.OrderStatus.Confirmed]: [interface_1.OrderStatus.Shipped, interface_1.OrderStatus.Cancelled],
+            [interface_1.OrderStatus.Shipped]: [interface_1.OrderStatus.Delivered, interface_1.OrderStatus.Cancelled],
+            [interface_1.OrderStatus.Delivered]: [interface_1.OrderStatus.Cancelled],
+            [interface_1.OrderStatus.Cancelled]: [],
+        };
+        // Validate status transition
+        if (!allowedTransitions[order.status].includes(newStatus)) {
+            throw new Error(`Invalid status transition from ${order.status} to ${newStatus}`);
+        }
+        // If the new status is Cancelled, update ZoneDailyProfitLossModel
+        if (newStatus === interface_1.OrderStatus.Cancelled) {
+            const orderDate = order.orderDate;
+            // Format orderDate to "DD-MM-YY" to match ZoneDailyProfitLossModel
+            const formattedOrderDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
+            const report = yield report_models_1.default.findOne({
+                store_id: storeId,
+                date: formattedOrderDate,
+            }).session(session);
+            if (report) {
+                report.total_sale_amount -= order.totalAmount;
+                report.total_orders -= 1;
+                report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
+                // Recalculate most sold product
+                const productSales = new Map();
+                const allOrders = yield order_model_1.default.find({
+                    storeId: storeId,
+                    orderDate: {
+                        $gte: new Date(orderDate.setHours(0, 0, 0, 0)),
+                        $lt: new Date(orderDate.setHours(23, 59, 59, 999)),
+                    },
+                    status: { $ne: interface_1.OrderStatus.Cancelled }, // Exclude cancelled orders
+                }).session(session);
+                for (const ord of allOrders) {
+                    for (const item of ord.products) {
+                        const productId = item.productId.toString();
+                        productSales.set(productId, (productSales.get(productId) || 0) + item.quantity);
+                    }
+                }
+                let maxQuantity = 0;
+                let mostSellingProductId;
+                for (const [productId, quantity] of productSales) {
+                    if (quantity > maxQuantity) {
+                        maxQuantity = quantity;
+                        mostSellingProductId = productId;
+                    }
+                }
+                if (mostSellingProductId) {
+                    report.most_selling_product_id = new mongoose_1.default.Types.ObjectId(mostSellingProductId).toString();
+                    report.most_selling_quantity = maxQuantity;
+                }
+                else {
+                    report.most_selling_product_id = "";
+                    report.most_selling_quantity = 0;
+                }
+                yield report.save({ session });
+            }
+        }
+        // Update the order status
+        order.status = newStatus;
+        yield order.save({ session });
+        // Populate product details for response
+        const updatedOrder = yield order_model_1.default.findOne({
+            orderId,
+            storeId,
+        })
+            .populate("products.productId", "name description unit category origin shelfLife image price actualPrice", "Product")
+            .lean()
+            .populate("storeId", "name address phone email openingTime", "Store")
+            .session(session);
+        yield session.commitTransaction();
+        res.status(200).json({
+            success: true,
+            message: `Order status updated to ${newStatus}`,
+            data: updatedOrder,
+        });
+    }
+    catch (err) {
+        yield session.abortTransaction();
+        console.error("Error updating order status:", err);
+        res.status(500).json({
+            success: false,
+            message: "Server error while updating order status",
+            error: err.message,
+        });
+    }
+    finally {
+        session.endSession();
+    }
+});
+exports.changeOrderStatus = changeOrderStatus;
 const createUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email, name, phone, addresses } = req.body;
@@ -432,6 +561,7 @@ const getAllOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             model: "Product", // Ensure it's referring to the correct model
             select: "name price image stock category", // Select relevant fields
         })
+            .populate("storeId", "name address phone email openingTime", "Store")
             .exec();
         // Get total count of orders
         const totalOrders = yield order_model_1.default.countDocuments();
@@ -775,22 +905,22 @@ const createAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             return;
         }
         // Validate role
-        if (!Object.values(interface_1.AdminRole).includes(role)) {
+        if (!Object.values(interface_2.AdminRole).includes(role)) {
             res.status(400).json({
                 success: false,
-                message: `Invalid role. Must be one of: ${Object.values(interface_1.AdminRole).join(", ")}`,
+                message: `Invalid role. Must be one of: ${Object.values(interface_2.AdminRole).join(", ")}`,
             });
             return;
         }
         // For StoreManager, ensure storeId is provided and valid
-        if (role === interface_1.AdminRole.StoreManager && !storeId) {
+        if (role === interface_2.AdminRole.StoreManager && !storeId) {
             res.status(400).json({
                 success: false,
                 message: "storeId is required for StoreManager role",
             });
             return;
         }
-        if (role === interface_1.AdminRole.StoreAdmin && !storeId) {
+        if (role === interface_2.AdminRole.StoreAdmin && !storeId) {
             res.status(400).json({
                 success: false,
                 message: "storeId is required for StoreAdmin role",
@@ -798,7 +928,7 @@ const createAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             return;
         }
         // For SuperAdmin, ensure storeId is not provided
-        if (role === interface_1.AdminRole.SuperAdmin && storeId) {
+        if (role === interface_2.AdminRole.SuperAdmin && storeId) {
             res.status(400).json({
                 success: false,
                 message: "storeId should not be provided for SuperAdmin role",
@@ -832,14 +962,14 @@ const createAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             password: hashedPassword,
             role,
             isActivate: false, // Default as per schema
-            isSuperAdmin: role === interface_1.AdminRole.SuperAdmin, // Set based on role
+            isSuperAdmin: role === interface_2.AdminRole.SuperAdmin, // Set based on role
         };
         // Add storeId for StoreManager
-        if (role === interface_1.AdminRole.StoreManager && storeId) {
+        if (role === interface_2.AdminRole.StoreManager && storeId) {
             adminData.storeId = new mongoose_1.default.Types.ObjectId(storeId);
         }
         // Add storeId for StoreAdmin
-        if (role === interface_1.AdminRole.StoreAdmin && storeId) {
+        if (role === interface_2.AdminRole.StoreAdmin && storeId) {
             adminData.storeId = new mongoose_1.default.Types.ObjectId(storeId);
         }
         // Create and save the admin
@@ -906,7 +1036,7 @@ const adminLogin = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         // sendAdminLoginAlert(admin.email, admin.name);
         // Send success response with token and user details
         var store = null;
-        if (admin.role === interface_1.AdminRole.StoreManager) {
+        if (admin.role === interface_2.AdminRole.StoreManager) {
             store = yield store_model_1.Store.findById(admin.storeId).select("name address phone email latitude longitude radius openingTime").lean();
         }
         const time = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
@@ -1007,7 +1137,7 @@ const getAllStores = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // Fetch store managers for all stores
         const storeIds = stores.map((store) => store._id);
         const admins = yield admin_model_1.Admin.find({
-            role: interface_1.AdminRole.StoreManager,
+            role: interface_2.AdminRole.StoreManager,
             storeId: { $in: storeIds },
         })
             .select("name email isActivate storeId")
@@ -1225,7 +1355,7 @@ const updateAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         const restrictedFields = ['password', 'isSuperAdmin', 'createdAt', 'updatedAt'];
         restrictedFields.forEach(field => delete updateData[field]);
         // Validate role if provided
-        if (updateData.role && !Object.values(interface_1.AdminRole).includes(updateData.role)) {
+        if (updateData.role && !Object.values(interface_2.AdminRole).includes(updateData.role)) {
             res.status(400).json({
                 success: false,
                 message: 'Invalid admin role'
@@ -1233,7 +1363,7 @@ const updateAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             return;
         }
         // If updating role to SuperAdmin, remove storeId requirement
-        if (updateData.role === interface_1.AdminRole.SuperAdmin) {
+        if (updateData.role === interface_2.AdminRole.SuperAdmin) {
             updateData.storeId = undefined;
         }
         // Find and update admin

@@ -23,6 +23,7 @@ import { ICashback } from "../types/interface/i.cashback";
 import Cashback from "../models/cashback.model";
 import { IAppDetails } from "../types/interface/i.app-details";
 import { AppDetails } from "../models/app.model";
+import ZoneDailyProfitLossModel from "../models/report.models";
 
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -388,6 +389,148 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     }
 }
 
+export const changeOrderStatus = async (req: Request, res: Response): Promise<void> => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { orderId, newStatus, storeId } = req.body;
+
+    // Validate inputs
+    if (!orderId || !newStatus || !storeId) {
+      throw new Error("orderId, newStatus, and storeId are required");
+    }
+
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(storeId)) {
+      throw new Error("Invalid StoreiD format");
+    }
+
+    // Validate newStatus
+    const validStatuses = Object.values(OrderStatus);
+    if (!validStatuses.includes(newStatus)) {
+      throw new Error(`Invalid status. Must be one of: ${validStatuses.join(", ")}`);
+    }
+
+    // Find the order
+    const order = await Order.findOne({
+      orderId,
+      storeId: new mongoose.Types.ObjectId(storeId),
+    }).session(session);
+
+    if (!order) {
+      throw new Error("Order not found");
+    }
+
+    // Check if order is already cancelled
+    if (order.status === OrderStatus.Cancelled) {
+      throw new Error("Cannot change status of a cancelled order");
+    }
+
+    // Define allowed status transitions
+    const allowedTransitions: { [key in OrderStatus]: OrderStatus[] } = {
+      [OrderStatus.Placed]: [
+        OrderStatus.Confirmed,
+        OrderStatus.Shipped,
+        OrderStatus.Cancelled,
+      ],
+      [OrderStatus.Confirmed]: [OrderStatus.Shipped, OrderStatus.Cancelled],
+      [OrderStatus.Shipped]: [OrderStatus.Delivered, OrderStatus.Cancelled],
+      [OrderStatus.Delivered]: [OrderStatus.Cancelled],
+      [OrderStatus.Cancelled]: [],
+    };
+
+    // Validate status transition
+    if (!allowedTransitions[order.status].includes(newStatus)) {
+      throw new Error(`Invalid status transition from ${order.status} to ${newStatus}`);
+    }
+
+    // If the new status is Cancelled, update ZoneDailyProfitLossModel
+    if (newStatus === OrderStatus.Cancelled) {
+      const orderDate = order.orderDate;
+      // Format orderDate to "DD-MM-YY" to match ZoneDailyProfitLossModel
+      const formattedOrderDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
+
+      const report = await ZoneDailyProfitLossModel.findOne({
+        store_id: storeId,
+        date: formattedOrderDate,
+      }).session(session);
+
+      if (report) {
+        report.total_sale_amount -= order.totalAmount;
+        report.total_orders -= 1;
+        report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
+
+        // Recalculate most sold product
+        const productSales = new Map<string, number>();
+        const allOrders = await Order.find({
+          storeId: storeId,
+          orderDate: {
+            $gte: new Date(orderDate.setHours(0, 0, 0, 0)),
+            $lt: new Date(orderDate.setHours(23, 59, 59, 999)),
+          },
+          status: { $ne: OrderStatus.Cancelled }, // Exclude cancelled orders
+        }).session(session);
+
+        for (const ord of allOrders) {
+          for (const item of ord.products) {
+            const productId = item.productId.toString();
+            productSales.set(productId, (productSales.get(productId) || 0) + item.quantity);
+          }
+        }
+        let maxQuantity = 0;
+        let mostSellingProductId: string | undefined;
+        for (const [productId, quantity] of productSales) {
+          if (quantity > maxQuantity) {
+            maxQuantity = quantity;
+            mostSellingProductId = productId;
+          }
+        }
+        if (mostSellingProductId) {
+          report.most_selling_product_id = new mongoose.Types.ObjectId(mostSellingProductId).toString();
+          report.most_selling_quantity = maxQuantity;
+        } else {
+          report.most_selling_product_id = "";
+          report.most_selling_quantity = 0;
+        }
+
+        await report.save({ session });
+      }
+    }
+
+    // Update the order status
+    order.status = newStatus;
+    await order.save({ session });
+
+    // Populate product details for response
+    const updatedOrder = await Order.findOne({
+      orderId,
+      storeId,
+    })
+      .populate("products.productId", "name description unit category origin shelfLife image price actualPrice", "Product")
+      .lean()
+      .populate("storeId", "name address phone email openingTime", "Store")
+      .session(session);
+
+    await session.commitTransaction();
+    res.status(200).json({
+      success: true,
+      message: `Order status updated to ${newStatus}`,
+      data: updatedOrder,
+    });
+  } catch (err: any) {
+    await session.abortTransaction();
+    console.error("Error updating order status:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server error while updating order status",
+      error: err.message,
+    });
+  } finally {
+    session.endSession();
+  }
+};
+
 export const createUser = async (req: Request, res: Response): Promise<void> => {
     try {
         const { email, name, phone, addresses } = req.body as Partial<IUser>;
@@ -484,6 +627,7 @@ export const getAllOrders = async (req: Request, res: Response): Promise<void> =
             model: "Product", // Ensure it's referring to the correct model
             select: "name price image stock category", // Select relevant fields
         })
+        .populate("storeId", "name address phone email openingTime", "Store")
         .exec();
 
         // Get total count of orders

@@ -23,6 +23,7 @@ router.get("/p/", admin_middleware_1.adminMiddleware, admin_controller_1.getProd
 router.get("/search", admin_middleware_1.adminMiddleware, admin_controller_1.searchProducts);
 router.get("/users", admin_middleware_1.adminMiddleware, admin_controller_1.getAllUsers);
 router.get("/orders", admin_middleware_1.adminMiddleware, admin_controller_1.getAllOrders);
+router.put("/update/order", admin_middleware_1.adminMiddleware, admin_controller_1.changeOrderStatus);
 router.get("/stores", admin_middleware_1.adminMiddleware, admin_controller_1.getAllStores);
 router.delete("/user/delete", admin_middleware_1.adminMiddleware, admin_controller_1.deleteUser);
 router.post("/coupon/create", admin_middleware_1.adminMiddleware, admin_controller_1.createCouponCode);
