@@ -581,11 +581,28 @@ const getAllOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* (
 exports.getAllOrders = getAllOrders;
 const sendNotification = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { fcmTokens, title, body } = req.body;
-        if (!fcmTokens || !Array.isArray(fcmTokens) || fcmTokens.length === 0 || !title || !body) {
-            res.status(400).json({ message: "Array of FCM tokens, title, and body are required" });
+        const { userIds, title, body } = req.body; // Optional: userIds to filter specific users
+        // Validate title and body
+        if (!title || !body) {
+            res.status(400).json({ message: "Title and body are required" });
             return;
         }
+        // Query users to aggregate fcmTokens
+        const query = userIds && Array.isArray(userIds) && userIds.length > 0
+            ? { _id: { $in: userIds } }
+            : {}; // If no userIds provided, fetch all users
+        const users = yield user_model_1.default.find(query).select("fcmTokens").lean();
+        // Aggregate fcmTokens into a single list, filter out invalid tokens
+        const fcmTokens = users
+            .flatMap((user) => user.fcmTokens || []) // Handle cases where fcmToken is a string or array
+            .filter((token) => typeof token === "string" && token.trim() !== ""); // Ensure valid tokens
+        console.log("fcmTokens", fcmTokens);
+        // Validate fcmTokens
+        if (!fcmTokens || fcmTokens.length === 0) {
+            res.status(400).json({ message: "No valid FCM tokens found" });
+            return;
+        }
+        // Prepare messages for Firebase
         const messages = fcmTokens.map((token) => ({
             notification: {
                 title,
@@ -593,7 +610,11 @@ const sendNotification = (req, res) => __awaiter(void 0, void 0, void 0, functio
             },
             token,
         }));
-        const batchResponse = yield firebase_admin_1.default.messaging().sendEachForMulticast({ tokens: fcmTokens, notification: { title, body } });
+        // Send notifications
+        const batchResponse = yield firebase_admin_1.default.messaging().sendEachForMulticast({
+            tokens: fcmTokens,
+            notification: { title, body },
+        });
         const successCount = batchResponse.successCount;
         const failureCount = batchResponse.failureCount;
         const responses = batchResponse.responses.map((resp, idx) => ({
