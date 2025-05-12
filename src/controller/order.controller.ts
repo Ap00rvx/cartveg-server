@@ -266,6 +266,7 @@ class OrderController {
         report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
 
         await report.save({ session });
+        console.log("REPOR SAVED", report); // Debugging
       } else {
         const newReport = new ZoneDailyProfitLossModel({
           store_id: storeId,
@@ -284,6 +285,7 @@ class OrderController {
           created_at: new Date().toISOString(),
         });
         await newReport.save({ session });
+        console.log("New report created:", newReport); // Debugging
       }
 
       // Create invoice

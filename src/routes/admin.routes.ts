@@ -1,7 +1,8 @@
-import { sendNotification,createAdmin,createStore,getAllOrders,updateUserDetails,createMultipleProducts,deleteMultipleProducts,getProductById,getAllProducts,searchProducts,getAllUsers,deleteUser,getAllStores, updateStoreDetails,createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser, adminLogin, assignStoreManager, createCashback,changeCashbackActiveStatus,getAllCashback,getAllAdmins,updateAdmin,createAppDetails,updateAppDetails,changeOrderStatus} from "../controller/admin.controller";
+import { sendNotification,createAdmin,createStore,getAllOrders,updateUserDetails,createMultipleProducts,deleteMultipleProducts,getProductById,getAllProducts,searchProducts,getAllUsers,deleteUser,getAllStores, updateStoreDetails,createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser, adminLogin, assignStoreManager, createCashback,changeCashbackActiveStatus,getAllCashback,getAllAdmins,updateAdmin,createAppDetails,updateAppDetails,changeOrderStatus,getSuperAdminAnalysis} from "../controller/admin.controller";
 import { Router } from "express";
 import { adminMiddleware } from "../middleware/admin.middleware";
 import uploadBuffer from "../config/csv-buffer";
+import { verifyStoreAdmin } from "../middleware/storeadmin.middleware";
 
 const router = Router();
 
@@ -12,8 +13,8 @@ router.delete("/deleteProducts", adminMiddleware,deleteMultipleProducts);
 router.post("/createProducts", adminMiddleware,createMultipleProducts);
 
 router.post("/user/create",adminMiddleware,createUser);
-router.post("/send-notification", adminMiddleware,sendNotification);
-
+router.post("/send-notification", verifyStoreAdmin,sendNotification);
+router.get("/analysis", adminMiddleware,getSuperAdminAnalysis);
 
 router.post("/create-admin",adminMiddleware,createAdmin); 
 router.post("/create-store",adminMiddleware,createStore)

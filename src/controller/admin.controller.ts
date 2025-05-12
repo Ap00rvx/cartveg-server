@@ -1656,3 +1656,221 @@ export const updateAppDetails = async (req: Request, res: Response): Promise<voi
         });
     }
 }
+
+
+export const getSuperAdminAnalysis = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Extract query parameters with defaults
+    const {
+      page = "1",
+      limit = "10",
+      startDate,
+      endDate,
+    } = req.query;
+
+    // Parse pagination parameters
+    const pageNumber = Math.max(1, parseInt(page as string, 10));
+    const limitNumber = Math.max(1, parseInt(limit as string, 10));
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // Build date filter for queries
+    const dateFilter: any = {};
+    if (startDate) {
+      dateFilter.$gte = new Date(startDate as string);
+    }
+    if (endDate) {
+      dateFilter.$lte = new Date(endDate as string);
+    }
+
+    // 1. Top Order
+    const topOrder = await Order.findOne(dateFilter ? { orderDate: dateFilter } : {})
+      .sort({ totalAmount: -1 })
+      .select("orderId totalAmount userId storeId orderDate")
+      .populate("userId", "name email")
+      .populate("storeId", "name address")
+      .lean();
+
+    // 2. Average Order Value and Total Orders
+    const orderStats = await Order.aggregate([
+      dateFilter ? { $match: { orderDate: dateFilter } } : { $match: {} },
+      {
+        $group: {
+          _id: null,
+          avgAmount: { $avg: "$totalAmount" },
+          totalOrders: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // 3. Store-Based Analysis
+    const storeAnalysis = await Order.aggregate([
+      dateFilter ? { $match: { orderDate: dateFilter } } : { $match: {} },
+      {
+        $group: {
+          _id: "$storeId",
+          totalOrders: { $sum: 1 },
+          avgOrderValue: { $avg: "$totalAmount" },
+          topOrder: { $max: "$totalAmount" },
+          topOrderDetails: {
+            $push: {
+              orderId: "$orderId",
+              totalAmount: "$totalAmount",
+              orderDate: "$orderDate",
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: "stores",
+          localField: "_id",
+          foreignField: "_id",
+          as: "storeDetails",
+        },
+      },
+      {
+        $unwind: "$storeDetails",
+      },
+      {
+        $project: {
+          storeId: "$_id",
+          storeName: "$storeDetails.name",
+          totalOrders: 1,
+          avgOrderValue: 1,
+          topOrder: {
+            $arrayElemAt: [
+              {
+                $filter: {
+                  input: "$topOrderDetails",
+                  as: "order",
+                  cond: { $eq: ["$$order.totalAmount", "$topOrder"] },
+                },
+              },
+              0,
+            ],
+          },
+        },
+      },
+      { $sort: { totalOrders: -1 } },
+      { $skip: skip },
+      { $limit: limitNumber },
+    ]);
+
+    // Count total stores for pagination
+    const totalStores = await Order.distinct("storeId", dateFilter ? { orderDate: dateFilter } : {}).then(
+      (storeIds) => storeIds.length
+    );
+
+    // 4. User Counts
+    const totalUsers = await User.countDocuments();
+    const activeUsers = await User.countDocuments({ isActivate: true });
+
+    // 5. Inventory Insights
+    const inventoryInsights = await ZoneDailyProfitLossModel.aggregate([
+      dateFilter ? { $match: { date: dateFilter } } : { $match: {} },
+      {
+        $group: {
+          _id: "$store_id",
+          totalSales: { $sum: "$total_sale_amount" },
+          netProfitLoss: { $sum: "$net_profit_or_loss" },
+          totalOrders: { $sum: "$total_orders" },
+          mostSoldProducts: {
+            $push: {
+              productId: "$most_selling_product_id",
+              quantity: "$most_selling_quantity",
+              date: "$date",
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: "stores",
+          localField: "_id",
+          foreignField: "_id",
+          as: "storeDetails",
+        },
+      },
+      {
+        $unwind: "$storeDetails",
+      },
+      {
+        $project: {
+          storeId: "$_id",
+          storeName: "$storeDetails.name",
+          totalSales: 1,
+          netProfitLoss: 1,
+          totalOrders: 1,
+          mostSoldProduct: {
+            $arrayElemAt: [
+              {
+                $sortArray: {
+                  input: "$mostSoldProducts",
+                  sortBy: { quantity: -1 },
+                },
+              },
+              0,
+            ],
+          },
+        },
+      },
+      { $sort: { totalSales: -1 } },
+      { $skip: skip },
+      { $limit: limitNumber },
+    ]);
+
+    // Count total stores with inventory data
+    const totalInventoryStores = await ZoneDailyProfitLossModel.distinct(
+      "store_id",
+      dateFilter ? { date: dateFilter } : {}
+    ).then((storeIds) => storeIds.length);
+
+    // Construct the success response
+    const successResponse: SuccessResponse = {
+      statusCode: 200,
+      message: "Super Admin analysis report generated successfully",
+      data: {
+        reportDate: new Date().toISOString().split("T")[0],
+        overallAnalysis: {
+          topOrder: topOrder || null,
+          averageOrderValue: orderStats[0]?.avgAmount || 0,
+          totalOrders: orderStats[0]?.totalOrders || 0,
+        },
+        storeAnalysis: {
+          stores: storeAnalysis,
+          pagination: {
+            currentPage: pageNumber,
+            totalPages: Math.ceil(totalStores / limitNumber),
+            totalStores,
+            limit: limitNumber,
+          },
+        },
+        userAnalysis: {
+          totalUsers,
+          activeUsers,
+        },
+        inventoryInsights: {
+          stores: inventoryInsights,
+          pagination: {
+            currentPage: pageNumber,
+            totalPages: Math.ceil(totalInventoryStores / limitNumber),
+            totalStores: totalInventoryStores,
+            limit: limitNumber,
+          },
+        },
+      },
+    };
+
+    res.status(200).json(successResponse);
+  } catch (error: any) {
+    console.error("Error generating Super Admin analysis report:", error);
+
+    const internalServerErrorResponse: InterServerError = {
+      statusCode: 500,
+      message: "Internal server error",
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    };
+
+    res.status(500).json(internalServerErrorResponse);
+  }
+};
