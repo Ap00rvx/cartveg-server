@@ -825,6 +825,7 @@ const uploadInventoryCsv = (req, res) => __awaiter(void 0, void 0, void 0, funct
             }
         }
         // Perform a single inventory update
+        // Perform a single inventory update
         if (productsToAdd.length > 0) {
             try {
                 // Check if inventory exists, create if not
@@ -841,53 +842,58 @@ const uploadInventoryCsv = (req, res) => __awaiter(void 0, void 0, void 0, funct
                 const existingProductIds = new Set(inventory.products.map((p) => p.productId.toString()));
                 const newProducts = productsToAdd.filter((item) => !existingProductIds.has(item.productId.toString()));
                 const updateProducts = productsToUpdate.filter((item) => existingProductIds.has(item.productId));
-                // Build update operation
-                const updateOperation = {};
+                // Perform updates in two steps to avoid conflicts
                 if (updateProducts.length > 0) {
-                    updateOperation.$set = updateProducts.reduce((acc, item) => {
-                        acc[`products.$[elem${item.productId}].quantity`] = item.quantity;
-                        acc[`products.$[elem${item.productId}].threshold`] = item.threshold;
-                        acc[`products.$[elem${item.productId}].availability`] = item.availability;
-                        return acc;
-                    }, {});
+                    // Update existing products
+                    const updateOperations = updateProducts.map((item) => ({
+                        updateOne: {
+                            filter: {
+                                storeId: objectIdStoreId,
+                                "products.productId": new mongoose_1.default.Types.ObjectId(item.productId),
+                            },
+                            update: {
+                                $set: {
+                                    "products.$.quantity": item.quantity,
+                                    "products.$.threshold": item.threshold,
+                                    "products.$.availability": item.availability,
+                                },
+                            },
+                        },
+                    }));
+                    yield inventory_model_1.Inventory.bulkWrite(updateOperations);
+                    console.log(`Updated ${updateProducts.length} existing products`);
                 }
+                // Add new products
                 if (newProducts.length > 0) {
-                    updateOperation.$push = {
-                        products: { $each: newProducts },
-                    };
-                }
-                // Perform the update
-                if (Object.keys(updateOperation).length > 0) {
-                    yield inventory_model_1.Inventory.findOneAndUpdate({ storeId: objectIdStoreId }, updateOperation, {
-                        arrayFilters: updateProducts.map((item) => ({
-                            [`elem${item.productId}.productId`]: new mongoose_1.default.Types.ObjectId(item.productId),
-                        })),
-                        new: true,
-                    });
-                    console.log('Inventory updated successfully');
+                    yield inventory_model_1.Inventory.findOneAndUpdate({ storeId: objectIdStoreId }, {
+                        $push: {
+                            products: { $each: newProducts },
+                        },
+                    }, { new: true });
+                    console.log(`Added ${newProducts.length} new products`);
                 }
                 // Refine results
                 result.addedProducts = newProducts.map((item) => {
                     var _a, _b;
                     return ({
                         productId: item.productId.toString(),
-                        name: ((_b = (_a = rows.find((row) => { var _a; return ((_a = row.productId) === null || _a === void 0 ? void 0 : _a.trim()) === item.productId.toString(); })) === null || _a === void 0 ? void 0 : _a.name) === null || _b === void 0 ? void 0 : _b.trim()) || 'Unknown',
+                        name: ((_b = (_a = rows.find((row) => { var _a; return ((_a = row.productId) === null || _a === void 0 ? void 0 : _a.trim()) === item.productId.toString(); })) === null || _a === void 0 ? void 0 : _a.name) === null || _b === void 0 ? void 0 : _b.trim()) || "Unknown",
                     });
                 });
                 result.updatedProducts = updateProducts.map((item) => {
                     var _a, _b;
                     return ({
                         productId: item.productId,
-                        name: ((_b = (_a = rows.find((row) => { var _a; return ((_a = row.productId) === null || _a === void 0 ? void 0 : _a.trim()) === item.productId; })) === null || _a === void 0 ? void 0 : _a.name) === null || _b === void 0 ? void 0 : _b.trim()) || 'Unknown',
+                        name: ((_b = (_a = rows.find((row) => { var _a; return ((_a = row.productId) === null || _a === void 0 ? void 0 : _a.trim()) === item.productId; })) === null || _a === void 0 ? void 0 : _a.name) === null || _b === void 0 ? void 0 : _b.trim()) || "Unknown",
                     });
                 });
             }
             catch (err) {
                 const saveErr = err;
-                console.error('Error updating inventory:', saveErr);
+                console.error("Error updating inventory:", saveErr);
                 res.status(500).json({
                     success: false,
-                    message: 'Error updating inventory',
+                    message: "Error updating inventory",
                     error: saveErr.message,
                 });
                 return;

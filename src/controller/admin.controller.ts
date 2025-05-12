@@ -789,6 +789,7 @@ export const getAllCoupons = async(req: Request, res: Response): Promise<void> =
     }
 }
 
+
 export const updateCouponDetails = async(req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.query;
