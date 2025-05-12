@@ -231,6 +231,7 @@ class OrderController {
                     report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
                     report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
                     yield report.save({ session });
+                    console.log("REPOR SAVED", report); // Debugging
                 }
                 else {
                     const newReport = new report_models_1.default({
@@ -250,6 +251,7 @@ class OrderController {
                         created_at: new Date().toISOString(),
                     });
                     yield newReport.save({ session });
+                    console.log("New report created:", newReport); // Debugging
                 }
                 // Create invoice
                 const invoiceData = {
