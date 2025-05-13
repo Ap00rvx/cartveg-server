@@ -23,24 +23,26 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSuperAdminAnalysis = exports.updateAppDetails = exports.createAppDetails = exports.updateAdmin = exports.getAllAdmins = exports.changeCashbackActiveStatus = exports.getAllCashback = exports.createCashback = exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.changeOrderStatus = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
+exports.manualWalletCredit = exports.getSuperAdminAnalysis = exports.updateAppDetails = exports.createAppDetails = exports.updateAdmin = exports.getAllAdmins = exports.changeCashbackActiveStatus = exports.getAllCashback = exports.createCashback = exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.changeOrderStatus = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const helpers_1 = require("../config/helpers");
+const interface_1 = require("../types/interface/interface");
 const cache_1 = __importDefault(require("../config/cache"));
 const order_model_1 = __importDefault(require("../models/order.model"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
-const interface_1 = require("../types/interface/interface");
+const interface_2 = require("../types/interface/interface");
 const mongoose_1 = __importDefault(require("mongoose"));
 const coupon_model_1 = __importDefault(require("../models/coupon.model"));
 const admin_model_1 = require("../models/admin.model");
-const interface_2 = require("../types/interface/interface");
+const interface_3 = require("../types/interface/interface");
 const store_model_1 = require("../models/store.model");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const cashback_model_1 = __importDefault(require("../models/cashback.model"));
 const app_model_1 = require("../models/app.model");
 const report_models_1 = __importDefault(require("../models/report.models"));
+const wallet_model_1 = require("../models/wallet.model");
 const createMultipleProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const products = req.body;
@@ -365,7 +367,7 @@ const changeOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
             throw new Error("Invalid StoreiD format");
         }
         // Validate newStatus
-        const validStatuses = Object.values(interface_1.OrderStatus);
+        const validStatuses = Object.values(interface_2.OrderStatus);
         if (!validStatuses.includes(newStatus)) {
             throw new Error(`Invalid status. Must be one of: ${validStatuses.join(", ")}`);
         }
@@ -378,27 +380,27 @@ const changeOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
             throw new Error("Order not found");
         }
         // Check if order is already cancelled
-        if (order.status === interface_1.OrderStatus.Cancelled) {
+        if (order.status === interface_2.OrderStatus.Cancelled) {
             throw new Error("Cannot change status of a cancelled order");
         }
         // Define allowed status transitions
         const allowedTransitions = {
-            [interface_1.OrderStatus.Placed]: [
-                interface_1.OrderStatus.Confirmed,
-                interface_1.OrderStatus.Shipped,
-                interface_1.OrderStatus.Cancelled,
+            [interface_2.OrderStatus.Placed]: [
+                interface_2.OrderStatus.Confirmed,
+                interface_2.OrderStatus.Shipped,
+                interface_2.OrderStatus.Cancelled,
             ],
-            [interface_1.OrderStatus.Confirmed]: [interface_1.OrderStatus.Shipped, interface_1.OrderStatus.Cancelled],
-            [interface_1.OrderStatus.Shipped]: [interface_1.OrderStatus.Delivered, interface_1.OrderStatus.Cancelled],
-            [interface_1.OrderStatus.Delivered]: [interface_1.OrderStatus.Cancelled],
-            [interface_1.OrderStatus.Cancelled]: [],
+            [interface_2.OrderStatus.Confirmed]: [interface_2.OrderStatus.Shipped, interface_2.OrderStatus.Cancelled],
+            [interface_2.OrderStatus.Shipped]: [interface_2.OrderStatus.Delivered, interface_2.OrderStatus.Cancelled],
+            [interface_2.OrderStatus.Delivered]: [interface_2.OrderStatus.Cancelled],
+            [interface_2.OrderStatus.Cancelled]: [],
         };
         // Validate status transition
         if (!allowedTransitions[order.status].includes(newStatus)) {
             throw new Error(`Invalid status transition from ${order.status} to ${newStatus}`);
         }
         // If the new status is Cancelled, update ZoneDailyProfitLossModel
-        if (newStatus === interface_1.OrderStatus.Cancelled) {
+        if (newStatus === interface_2.OrderStatus.Cancelled) {
             const orderDate = order.orderDate;
             // Format orderDate to "DD-MM-YY" to match ZoneDailyProfitLossModel
             const formattedOrderDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
@@ -418,7 +420,7 @@ const changeOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
                         $gte: new Date(orderDate.setHours(0, 0, 0, 0)),
                         $lt: new Date(orderDate.setHours(23, 59, 59, 999)),
                     },
-                    status: { $ne: interface_1.OrderStatus.Cancelled }, // Exclude cancelled orders
+                    status: { $ne: interface_2.OrderStatus.Cancelled }, // Exclude cancelled orders
                 }).session(session);
                 for (const ord of allOrders) {
                     for (const item of ord.products) {
@@ -638,47 +640,113 @@ const sendNotification = (req, res) => __awaiter(void 0, void 0, void 0, functio
 exports.sendNotification = sendNotification;
 const createCouponCode = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { code, expiry, minValue, maxUsage, offValue } = req.body;
+        const { code, expiry, minValue, maxUsage, offValue, couponType, minOrders, isActive, isDeleted } = req.body;
         // Validate required fields
-        if (!code || !expiry || !minValue || !maxUsage || !offValue) {
+        if (!code || !expiry || minValue === undefined || !maxUsage || offValue === undefined || !couponType) {
             res.status(400).json({
                 success: false,
-                message: "All fields are required: code, expiry, minValue, maxUsage, offValue"
+                message: "All fields are required: code, expiry, minValue, maxUsage, offValue, couponType",
+            });
+            return;
+        }
+        // Validate couponType
+        if (!Object.values(interface_1.CouponType).includes(couponType)) {
+            res.status(400).json({
+                success: false,
+                message: "Invalid couponType. Must be 'MaxUsage' or 'MinOrders'",
+            });
+            return;
+        }
+        // Validate minOrders for MinOrders coupon type
+        if (couponType === interface_1.CouponType.MinOrders) {
+            if (minOrders === undefined || !Number.isInteger(minOrders) || minOrders < 0) {
+                res.status(400).json({
+                    success: false,
+                    message: "minOrders must be a non-negative integer for MinOrders coupon type",
+                });
+                return;
+            }
+        }
+        else if (minOrders !== undefined && minOrders !== null) {
+            res.status(400).json({
+                success: false,
+                message: "minOrders must be null or undefined for MaxUsage coupon type",
+            });
+            return;
+        }
+        // Validate numeric fields
+        if (minValue < 0) {
+            res.status(400).json({
+                success: false,
+                message: "minValue must be non-negative",
+            });
+            return;
+        }
+        if (maxUsage < 1) {
+            res.status(400).json({
+                success: false,
+                message: "maxUsage must be at least 1",
+            });
+            return;
+        }
+        if (offValue <= 0) {
+            res.status(400).json({
+                success: false,
+                message: "offValue must be positive",
+            });
+            return;
+        }
+        // Validate expiry date
+        const expiryDate = new Date(expiry);
+        if (isNaN(expiryDate.getTime())) {
+            res.status(400).json({
+                success: false,
+                message: "Invalid expiry date format. Use ISO 8601 (e.g., '2025-12-31T23:59:59.999Z')",
+            });
+            return;
+        }
+        if (expiryDate <= new Date()) {
+            res.status(400).json({
+                success: false,
+                message: "Expiry date must be in the future",
             });
             return;
         }
         // Check if coupon code already exists
-        const existingCoupon = yield coupon_model_1.default.findOne({ code });
+        const existingCoupon = yield coupon_model_1.default.findOne({ couponCode: code });
         if (existingCoupon) {
             res.status(400).json({
                 success: false,
-                message: "Coupon code already exists"
+                message: "Coupon code already exists",
             });
             return;
         }
         // Create new coupon
         const coupon = yield coupon_model_1.default.create({
             couponCode: code,
-            expiry: new Date(expiry),
+            expiry: expiryDate,
             minValue,
             maxUsage,
-            offValue
+            offValue,
+            couponType,
+            minOrders: couponType === interface_1.CouponType.MinOrders ? minOrders : null,
+            isActive: isActive !== undefined ? isActive : true,
+            isDeleted: isDeleted !== undefined ? isDeleted : false,
+            usedUsers: [],
         });
         res.status(201).json({
             success: true,
             message: "Coupon created successfully",
-            coupon
+            coupon,
         });
-        return;
     }
     catch (error) {
         console.error("Error creating coupon:", error);
         res.status(500).json({
             success: false,
             message: "Something went wrong while creating coupon",
-            error: error.message
+            error: error.message,
         });
-        return;
     }
 });
 exports.createCouponCode = createCouponCode;
@@ -926,22 +994,22 @@ const createAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             return;
         }
         // Validate role
-        if (!Object.values(interface_2.AdminRole).includes(role)) {
+        if (!Object.values(interface_3.AdminRole).includes(role)) {
             res.status(400).json({
                 success: false,
-                message: `Invalid role. Must be one of: ${Object.values(interface_2.AdminRole).join(", ")}`,
+                message: `Invalid role. Must be one of: ${Object.values(interface_3.AdminRole).join(", ")}`,
             });
             return;
         }
         // For StoreManager, ensure storeId is provided and valid
-        if (role === interface_2.AdminRole.StoreManager && !storeId) {
+        if (role === interface_3.AdminRole.StoreManager && !storeId) {
             res.status(400).json({
                 success: false,
                 message: "storeId is required for StoreManager role",
             });
             return;
         }
-        if (role === interface_2.AdminRole.StoreAdmin && !storeId) {
+        if (role === interface_3.AdminRole.StoreAdmin && !storeId) {
             res.status(400).json({
                 success: false,
                 message: "storeId is required for StoreAdmin role",
@@ -949,7 +1017,7 @@ const createAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             return;
         }
         // For SuperAdmin, ensure storeId is not provided
-        if (role === interface_2.AdminRole.SuperAdmin && storeId) {
+        if (role === interface_3.AdminRole.SuperAdmin && storeId) {
             res.status(400).json({
                 success: false,
                 message: "storeId should not be provided for SuperAdmin role",
@@ -983,14 +1051,14 @@ const createAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             password: hashedPassword,
             role,
             isActivate: false, // Default as per schema
-            isSuperAdmin: role === interface_2.AdminRole.SuperAdmin, // Set based on role
+            isSuperAdmin: role === interface_3.AdminRole.SuperAdmin, // Set based on role
         };
         // Add storeId for StoreManager
-        if (role === interface_2.AdminRole.StoreManager && storeId) {
+        if (role === interface_3.AdminRole.StoreManager && storeId) {
             adminData.storeId = new mongoose_1.default.Types.ObjectId(storeId);
         }
         // Add storeId for StoreAdmin
-        if (role === interface_2.AdminRole.StoreAdmin && storeId) {
+        if (role === interface_3.AdminRole.StoreAdmin && storeId) {
             adminData.storeId = new mongoose_1.default.Types.ObjectId(storeId);
         }
         // Create and save the admin
@@ -1057,7 +1125,7 @@ const adminLogin = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         // sendAdminLoginAlert(admin.email, admin.name);
         // Send success response with token and user details
         var store = null;
-        if (admin.role === interface_2.AdminRole.StoreManager) {
+        if (admin.role === interface_3.AdminRole.StoreManager) {
             store = yield store_model_1.Store.findById(admin.storeId).select("name address phone email latitude longitude radius openingTime").lean();
         }
         const time = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
@@ -1158,7 +1226,7 @@ const getAllStores = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // Fetch store managers for all stores
         const storeIds = stores.map((store) => store._id);
         const admins = yield admin_model_1.Admin.find({
-            role: interface_2.AdminRole.StoreManager,
+            role: interface_3.AdminRole.StoreManager,
             storeId: { $in: storeIds },
         })
             .select("name email isActivate storeId")
@@ -1376,7 +1444,7 @@ const updateAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         const restrictedFields = ['password', 'isSuperAdmin', 'createdAt', 'updatedAt'];
         restrictedFields.forEach(field => delete updateData[field]);
         // Validate role if provided
-        if (updateData.role && !Object.values(interface_2.AdminRole).includes(updateData.role)) {
+        if (updateData.role && !Object.values(interface_3.AdminRole).includes(updateData.role)) {
             res.status(400).json({
                 success: false,
                 message: 'Invalid admin role'
@@ -1384,7 +1452,7 @@ const updateAdmin = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             return;
         }
         // If updating role to SuperAdmin, remove storeId requirement
-        if (updateData.role === interface_2.AdminRole.SuperAdmin) {
+        if (updateData.role === interface_3.AdminRole.SuperAdmin) {
             updateData.storeId = undefined;
         }
         // Find and update admin
@@ -1675,3 +1743,68 @@ const getSuperAdminAnalysis = (req, res) => __awaiter(void 0, void 0, void 0, fu
     }
 });
 exports.getSuperAdminAnalysis = getSuperAdminAnalysis;
+const manualWalletCredit = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { userId, amount, description } = req.body;
+        // Validate input
+        if (!userId || !amount || !description) {
+            res.status(400).json({
+                message: "userId, amount, and description are required",
+            });
+            return;
+        }
+        if (!mongoose_1.default.Types.ObjectId.isValid(userId)) {
+            res.status(400).json({
+                message: "Invalid userId format",
+            });
+            return;
+        }
+        if (typeof amount !== "number" || amount <= 0) {
+            res.status(400).json({
+                message: "Amount must be a positive number",
+            });
+            return;
+        }
+        // Check if user exists
+        const user = yield user_model_1.default.findById(userId);
+        if (!user) {
+            res.status(404).json({
+                message: "User not found",
+            });
+            return;
+        }
+        // Find or create wallet
+        let wallet = yield wallet_model_1.UserWallet.findOne({ userId });
+        if (!wallet) {
+            wallet = yield wallet_model_1.UserWallet.create({
+                userId: new mongoose_1.default.Types.ObjectId(userId),
+                current_amount: 0,
+                transaction_history: [],
+            });
+        }
+        // Create new transaction
+        const newTransaction = {
+            transactionId: new mongoose_1.default.Types.ObjectId(),
+            amount,
+            type: "credit", // Explicitly type as "credit"
+            date: new Date(),
+            description: description, // Ensure description is a string
+        };
+        // Update wallet: add transaction and update current_amount
+        wallet.current_amount += amount;
+        wallet.transaction_history.push(newTransaction);
+        yield wallet.save();
+        // Return the newly added transaction
+        res.status(200).json({
+            message: "Wallet credited successfully",
+            transaction: newTransaction,
+        });
+    }
+    catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
+});
+exports.manualWalletCredit = manualWalletCredit;

@@ -11,6 +11,7 @@ import crypto from "crypto";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import Cashback from "../models/cashback.model";
+import { AppDetails } from "../models/app.model";
 
 dotenv.config();
 
@@ -401,92 +402,31 @@ export const removeAddress  = async (req: Request, res: Response): Promise<void>
   }
 
 };
-/**
- * Fetches products from stores within delivery radius of the user's selected address.
- * @param req - Express request object containing address index.
- * @param res - Express response object.
- */
-// export const getNearbyStoreProducts = async (req: Request, res: Response): Promise<void> => {
-//   const { addressIndex } = req.body; // Extract address index from request body
-//   if (addressIndex === undefined) {
-//     // Validate address index
-//     res.status(400).json({ msg: "Address index is required" });
-//     return;
-//   }
-//   const tokenEmail = (req as any).user?.email; // Get email from JWT token
-//   if (!tokenEmail) {
-//     // Check if user is authenticated
-//     res.status(401).json({ msg: "Unauthorized" });
-//     return;
-//   }
-//   try {
-//     const user = await User.findOne({ email: tokenEmail }); // Find user by email
-//     if (!user) {
-//       // Ensure user exists
-//       res.status(400).json({ msg: "User not found" });
-//       return;
-//     }
-//     if (!user.addresses || user.addresses.length <= addressIndex) {
-//       // Validate address index
-//       res.status(400).json({ msg: "Invalid address index" });
-//       return;
-//     }
-//     const selectedAddress = user.addresses[addressIndex]; // Get selected address
-//     const stores = await Store.find(); // Fetch all stores
 
-//     const nearbyStores = stores.filter((store: { latitude: any; longitude: any; radius: number; }) =>
-//       haversine(
-//         selectedAddress.latitude,
-//         selectedAddress.longitude,
-//         store.latitude,
-//         store.longitude
-//       ) <= store.radius
-//     ); // Filter stores within delivery radius
-
-//     if (nearbyStores.length === 0) {
-//       // Check if any stores are available
-//       res.status(200).json({
-//         message: "No stores available for delivery at this address",
-//         statusCode: 200,
-//         data: [],
-//       });
-//       return;
-//     }
-
-//     const storeIds = nearbyStores.map((store: { _id: any; }) => store._id); // Get IDs of nearby stores
-//     const inventories = await Inventory.find({ storeId: { $in: storeIds }, isAvailable: true })
-//       .populate({
-//         path: "productId",
-//         select: "name description category image unit origin shelfLife", // Populate product details
-//       }); // Fetch available inventory for nearby stores
-
-//     const products = inventories.map((inventory: { storeId: any; productId: any; stock: any; sellingPrice: any; actualPrice: any; }) => ({
-//       storeId: inventory.storeId,
-//       product: inventory.productId,
-//       stock: inventory.stock,
-//       sellingPrice: inventory.sellingPrice,
-//       actualPrice: inventory.actualPrice,
-//     })); // Format response data
-
-//     const successResponse: SuccessResponse = {
-//       message: "Products fetched successfully",
-//       statusCode: 200,
-//       data: {
-//         stores: nearbyStores,
-//         products,
-//       },
-//     };
-//     res.status(200).json(successResponse); // Send success response
-//   } catch (err: any) {
-//     console.error("Error fetching nearby store products:", err); // Log error
-//     const response: InterServerError = {
-//       message: err.message,
-//       statusCode: 500,
-//       stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-//     };
-//     res.status(500).json(response); // Send error response
-//   }
-// };
+export const getAppDetails = async (req: Request, res: Response): Promise<void> => {
+  try{
+    const appDetails = await AppDetails.findOne({}); // Fetch app details from database
+    if (!appDetails) {
+      // Check if app details exist
+      res.status(404).json({ msg: "App details not found" });
+      return;
+    }
+    const successResponse: SuccessResponse = {
+      message: "App details fetched successfully",
+      statusCode: 200,
+      data: appDetails,
+    };
+    res.status(200).json(successResponse); // Send success response
+  }catch(err:any){
+    console.error("Error fetching app details:", err); // Log error
+    const response: InterServerError = {
+      message: err.message,
+      statusCode: 500,
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    };
+    res.status(500).json(response); // Send error response
+  }
+};
 
 export const getActiveCashbacks = async (req: Request, res: Response): Promise<void> => {
   

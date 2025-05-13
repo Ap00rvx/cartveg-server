@@ -605,6 +605,7 @@ export const getStoreOrder = async (req: Request, res: Response): Promise<void> 
       storeId: new mongoose.Types.ObjectId(storeId),
     })
       .populate("products.productId", "name description unit category origin shelfLife image price actualPrice",   "Product")
+      .populate("userId", "name email phone", "User")
       .skip(skip)
       .limit(limit)
       .lean();
@@ -705,6 +706,9 @@ export const changeOrderStatus = async (req: Request, res: Response): Promise<vo
 
       if (report) {
         report.total_sale_amount -= order.totalAmount;
+        if (order.isCashOnDelivery) {
+          report.cash_on_delivery_amount -= order.totalAmount;
+        }
         report.total_orders -= 1;
         report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
 
@@ -755,6 +759,7 @@ export const changeOrderStatus = async (req: Request, res: Response): Promise<vo
       storeId,
     })
       .populate("products.productId", "name description unit category origin shelfLife image price actualPrice", "Product")
+      .populate("userId", "name email phone", "User")
       .lean()
       .session(session);
 

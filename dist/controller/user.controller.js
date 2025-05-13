@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getActiveCashbacks = exports.removeAddress = exports.addAddress = exports.saveUserDetails = exports.getUserDetails = exports.saveFCMToken = exports.verifyOtp = exports.resendOtp = exports.authenticate = void 0;
+exports.getActiveCashbacks = exports.getAppDetails = exports.removeAddress = exports.addAddress = exports.saveUserDetails = exports.getUserDetails = exports.saveFCMToken = exports.verifyOtp = exports.resendOtp = exports.authenticate = void 0;
 const user_model_1 = __importDefault(require("../models/user.model"));
 const otp_model_1 = __importDefault(require("../models/otp.model"));
 const nodemailer_1 = __importDefault(require("../config/nodemailer"));
@@ -20,6 +20,7 @@ const crypto_1 = __importDefault(require("crypto"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const cashback_model_1 = __importDefault(require("../models/cashback.model"));
+const app_model_1 = require("../models/app.model");
 dotenv_1.default.config();
 /**
  * Calculates distance between two geographic points using the Haversine formula.
@@ -400,87 +401,32 @@ const removeAddress = (req, res) => __awaiter(void 0, void 0, void 0, function* 
     }
 });
 exports.removeAddress = removeAddress;
-/**
- * Fetches products from stores within delivery radius of the user's selected address.
- * @param req - Express request object containing address index.
- * @param res - Express response object.
- */
-// export const getNearbyStoreProducts = async (req: Request, res: Response): Promise<void> => {
-//   const { addressIndex } = req.body; // Extract address index from request body
-//   if (addressIndex === undefined) {
-//     // Validate address index
-//     res.status(400).json({ msg: "Address index is required" });
-//     return;
-//   }
-//   const tokenEmail = (req as any).user?.email; // Get email from JWT token
-//   if (!tokenEmail) {
-//     // Check if user is authenticated
-//     res.status(401).json({ msg: "Unauthorized" });
-//     return;
-//   }
-//   try {
-//     const user = await User.findOne({ email: tokenEmail }); // Find user by email
-//     if (!user) {
-//       // Ensure user exists
-//       res.status(400).json({ msg: "User not found" });
-//       return;
-//     }
-//     if (!user.addresses || user.addresses.length <= addressIndex) {
-//       // Validate address index
-//       res.status(400).json({ msg: "Invalid address index" });
-//       return;
-//     }
-//     const selectedAddress = user.addresses[addressIndex]; // Get selected address
-//     const stores = await Store.find(); // Fetch all stores
-//     const nearbyStores = stores.filter((store: { latitude: any; longitude: any; radius: number; }) =>
-//       haversine(
-//         selectedAddress.latitude,
-//         selectedAddress.longitude,
-//         store.latitude,
-//         store.longitude
-//       ) <= store.radius
-//     ); // Filter stores within delivery radius
-//     if (nearbyStores.length === 0) {
-//       // Check if any stores are available
-//       res.status(200).json({
-//         message: "No stores available for delivery at this address",
-//         statusCode: 200,
-//         data: [],
-//       });
-//       return;
-//     }
-//     const storeIds = nearbyStores.map((store: { _id: any; }) => store._id); // Get IDs of nearby stores
-//     const inventories = await Inventory.find({ storeId: { $in: storeIds }, isAvailable: true })
-//       .populate({
-//         path: "productId",
-//         select: "name description category image unit origin shelfLife", // Populate product details
-//       }); // Fetch available inventory for nearby stores
-//     const products = inventories.map((inventory: { storeId: any; productId: any; stock: any; sellingPrice: any; actualPrice: any; }) => ({
-//       storeId: inventory.storeId,
-//       product: inventory.productId,
-//       stock: inventory.stock,
-//       sellingPrice: inventory.sellingPrice,
-//       actualPrice: inventory.actualPrice,
-//     })); // Format response data
-//     const successResponse: SuccessResponse = {
-//       message: "Products fetched successfully",
-//       statusCode: 200,
-//       data: {
-//         stores: nearbyStores,
-//         products,
-//       },
-//     };
-//     res.status(200).json(successResponse); // Send success response
-//   } catch (err: any) {
-//     console.error("Error fetching nearby store products:", err); // Log error
-//     const response: InterServerError = {
-//       message: err.message,
-//       statusCode: 500,
-//       stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-//     };
-//     res.status(500).json(response); // Send error response
-//   }
-// };
+const getAppDetails = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const appDetails = yield app_model_1.AppDetails.findOne({}); // Fetch app details from database
+        if (!appDetails) {
+            // Check if app details exist
+            res.status(404).json({ msg: "App details not found" });
+            return;
+        }
+        const successResponse = {
+            message: "App details fetched successfully",
+            statusCode: 200,
+            data: appDetails,
+        };
+        res.status(200).json(successResponse); // Send success response
+    }
+    catch (err) {
+        console.error("Error fetching app details:", err); // Log error
+        const response = {
+            message: err.message,
+            statusCode: 500,
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        };
+        res.status(500).json(response); // Send error response
+    }
+});
+exports.getAppDetails = getAppDetails;
 const getActiveCashbacks = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const activeCashbacks = yield cashback_model_1.default.find({

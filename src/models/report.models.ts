@@ -53,6 +53,14 @@ const ZoneDailyProfitLossSchema: Schema = new Schema(
         type: Number,
         required: true,
       },
+      cash_on_delivery_amount: {
+        type: Number,
+        required: true,
+      },
+      online_payment_amount: {
+        type: Number,
+        required: true,
+      },
       avg_order_value: {
         type: Number,
         required: true,

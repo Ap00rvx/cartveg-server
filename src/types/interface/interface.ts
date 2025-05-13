@@ -158,6 +158,8 @@ export interface IZoneDailyProfitLoss {
     store_id: mongoose.Types.ObjectId; 
     date: string ;
     total_sale_amount: number;
+    cash_on_delivery_amount: number;
+    online_payment_amount: number;
     total_purchase_cost: number;
     total_fixed_cost: number;
     labour_cost: number;
@@ -172,12 +174,18 @@ export interface IZoneDailyProfitLoss {
   }
 
 export interface ICoupon {
-    minValue  : number; 
-    expiry :Date; 
-    maxUsage: number; 
-    couponCode : string;
-    offValue :  number;
-    isActive: boolean;
-    isDeleted: boolean;
-    usedUsers : string[]; 
+  minValue: number;
+  expiry: Date;
+  maxUsage: number;
+  couponCode: string;
+  offValue: number;
+  isActive: boolean;
+  isDeleted: boolean;
+  usedUsers: string[];
+  couponType: CouponType;
+  minOrders?: number;
+}
+export enum CouponType {
+  MaxUsage = "MaxUsage",
+  MinOrders = "MinOrders",
 }

@@ -494,6 +494,7 @@ const getStoreOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             storeId: new mongoose_1.default.Types.ObjectId(storeId),
         })
             .populate("products.productId", "name description unit category origin shelfLife image price actualPrice", "Product")
+            .populate("userId", "name email phone", "User")
             .skip(skip)
             .limit(limit)
             .lean();
@@ -580,6 +581,9 @@ const changeOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
             }).session(session);
             if (report) {
                 report.total_sale_amount -= order.totalAmount;
+                if (order.isCashOnDelivery) {
+                    report.cash_on_delivery_amount -= order.totalAmount;
+                }
                 report.total_orders -= 1;
                 report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
                 // Recalculate most sold product
@@ -626,6 +630,7 @@ const changeOrderStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
             storeId,
         })
             .populate("products.productId", "name description unit category origin shelfLife image price actualPrice", "Product")
+            .populate("userId", "name email phone", "User")
             .lean()
             .session(session);
         yield session.commitTransaction();

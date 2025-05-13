@@ -35,5 +35,6 @@ router.put("/coupon/status", admin_middleware_1.adminMiddleware, admin_controlle
 router.post("/cashback/create", admin_middleware_1.adminMiddleware, admin_controller_1.createCashback);
 router.get("/cashback", admin_middleware_1.adminMiddleware, admin_controller_1.getAllCashback);
 router.put("/cashback/status", admin_middleware_1.adminMiddleware, admin_controller_1.changeCashbackActiveStatus);
+router.post("/wallet/add", admin_middleware_1.adminMiddleware, admin_controller_1.manualWalletCredit);
 exports.default = router;
 /// route 

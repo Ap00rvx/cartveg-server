@@ -1,27 +1,33 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
-import Order from "../models/order.model";
-import { Store } from "../models/store.model";
+
+import Coupon from "../models/coupon.model";
 import { Inventory } from "../models/inventory.model";
 import Invoice from "../models/invoice.model";
-import User from "../models/user.model";
-import Coupon from "../models/coupon.model";
-import { IOrder, IInvoice, OrderStatus, PaymentStatus } from "../types/interface/interface";
+import Order from "../models/order.model";
 import Product from "../models/product.model";
-import ZoneDailyProfitLossModel from "../models/report.models";
+import { Store } from "../models/store.model";
+import User from "../models/user.model";
 import { UserWallet } from "../models/wallet.model";
+import ZoneDailyProfitLossModel from "../models/report.models";
+import { IInvoice, IOrder, OrderStatus, PaymentStatus } from "../types/interface/interface";
+import { sendOrderCreatedMail } from "../config/nodemailer";
 
-// Helper function to calculate total amount and items
+// Interface for product details in order
 interface ProductDetails {
   productId: mongoose.Types.ObjectId;
   quantity: number;
 }
 
-const calculateOrderTotals = async (products: ProductDetails[], session: mongoose.ClientSession): Promise<{
+// Helper function to calculate order totals
+async function calculateOrderTotals(
+  products: ProductDetails[],
+  session: mongoose.ClientSession,
+): Promise<{
   totalAmount: number;
   totalItems: number;
   itemsForInvoice: { name: string; quantity: number; price: number }[];
-}> => {
+}> {
   let totalAmount = 0;
   let totalItems = 0;
   const itemsForInvoice: { name: string; quantity: number; price: number }[] = [];
@@ -41,12 +47,16 @@ const calculateOrderTotals = async (products: ProductDetails[], session: mongoos
   }
 
   return { totalAmount, totalItems, itemsForInvoice };
-};
+}
 
 // Order Controller
 class OrderController {
-  // Create a new order (Transaction-based)
-  async createOrder(req: Request, res: Response) {
+  /**
+   * Create a new order (Transaction-based)
+   * @param req Express request object
+   * @param res Express response object
+   */
+  async createOrder(req: Request, res: Response): Promise<void> {
     const session = await mongoose.startSession();
     session.startTransaction();
     const {
@@ -56,27 +66,35 @@ class OrderController {
       isCashOnDelivery,
       deliveryAddress,
       appliedCoupon,
-      walletAmount = 0, // New field for wallet amount to use
+      walletAmount = 0,
     } = req.body;
 
     try {
-      // Validate required fields
-      if (!userId || !products || !products.length || !storeId || !deliveryAddress || isCashOnDelivery === undefined) {
-        throw new Error("Missing required fields: userId, products, storeId, deliveryAddress, isCashOnDelivery");
+      // Validation
+      if (
+        !userId ||
+        !products ||
+        !products.length ||
+        !storeId ||
+        !deliveryAddress ||
+        isCashOnDelivery === undefined
+      ) {
+        throw new Error(
+          "Missing required fields: userId, products, storeId, deliveryAddress, isCashOnDelivery",
+        );
       }
 
-      // Validate userId
       if (!mongoose.Types.ObjectId.isValid(userId)) {
         throw new Error("Invalid user ID");
       }
 
-      // Fetch user details from User model
+      // Fetch user
       const user = await User.findById(userId).session(session);
       if (!user) {
         throw new Error("User not found");
       }
 
-      // Validate store exists
+      // Validate store
       const store = await Store.findById(storeId).session(session);
       if (!store) {
         throw new Error("Store not found");
@@ -93,7 +111,7 @@ class OrderController {
           throw new Error("Invalid product details: productId and quantity are required");
         }
         const inventoryProduct = inventory.products.find(
-          (p) => p.productId.toString() === item.productId.toString()
+          (p:any) => p.productId.toString() === item.productId.toString(),
         );
         if (!inventoryProduct) {
           throw new Error(`Product ${item.productId} not found in store inventory`);
@@ -104,9 +122,12 @@ class OrderController {
       }
 
       // Calculate totals
-      const { totalAmount, totalItems, itemsForInvoice } = await calculateOrderTotals(products, session);
+      const { totalAmount, totalItems, itemsForInvoice } = await calculateOrderTotals(
+        products,
+        session,
+      );
 
-      // Apply coupon discount if provided
+      // Apply coupon discount
       let discountAmount = 0;
       let coupon = null;
       if (appliedCoupon && appliedCoupon.couponId) {
@@ -128,7 +149,9 @@ class OrderController {
           throw new Error("Coupon has reached maximum usage");
         }
         if (totalAmount < coupon.minValue) {
-          throw new Error(`Order total (${totalAmount}) is less than minimum value (${coupon.minValue}) for coupon`);
+          throw new Error(
+            `Order total (${totalAmount}) is less than minimum value (${coupon.minValue}) for coupon`,
+          );
         }
         if (coupon.usedUsers.includes(userId)) {
           throw new Error("Coupon already used by this user");
@@ -151,18 +174,17 @@ class OrderController {
           throw new Error("Wallet not found for this user");
         }
         if (wallet.current_amount < walletAmount) {
-          throw new Error(`Insufficient wallet balance. Available: ${wallet.current_amount}, Requested: ${walletAmount}`);
+          throw new Error(
+            `Insufficient wallet balance. Available: ${wallet.current_amount}, Requested: ${walletAmount}`,
+          );
         }
         const finalAmountAfterDiscount = totalAmount - discountAmount;
-        walletAmountUsed = Math.min(walletAmount, finalAmountAfterDiscount); // Use wallet amount up to order total
+        walletAmountUsed = Math.min(walletAmount, finalAmountAfterDiscount);
         if (walletAmountUsed <= 0) {
           throw new Error("Wallet amount cannot cover any part of the order after discounts");
         }
 
-        // Deduct wallet amount
         wallet.current_amount -= walletAmountUsed;
-
-        // Record transaction in wallet history
         wallet.transaction_history.push({
           amount: walletAmountUsed,
           type: "debit",
@@ -170,11 +192,10 @@ class OrderController {
           description: `Order payment for order ORD-${Date.now()}`,
           transactionId: new mongoose.Types.ObjectId(),
         });
-
         await wallet.save({ session });
       }
 
-      // Generate orderId and invoiceId
+      // Generate IDs
       const timestamp = Date.now();
       const orderId = `ORD-${timestamp}`;
       const invoiceId = `INV-ORD-${timestamp}`;
@@ -185,7 +206,7 @@ class OrderController {
         userId: new mongoose.Types.ObjectId(userId),
         products,
         storeId: new mongoose.Types.ObjectId(storeId),
-        totalAmount: totalAmount - discountAmount - walletAmountUsed, // Adjust total after wallet
+        totalAmount: totalAmount - discountAmount - walletAmountUsed,
         shippingAmount: 50,
         totalItems,
         isCashOnDelivery,
@@ -198,7 +219,7 @@ class OrderController {
               discountAmount,
             }
           : undefined,
-        wallet_amount_used: walletAmountUsed, // Record wallet amount used
+        wallet_amount_used: walletAmountUsed,
         status: OrderStatus.Placed,
         paymentStatus: isCashOnDelivery ? PaymentStatus.Pending : PaymentStatus.Pending,
         rzpOrderId: isCashOnDelivery ? undefined : `RZP-${timestamp}`,
@@ -220,7 +241,7 @@ class OrderController {
       // Update inventory
       for (const item of products) {
         const inventoryProduct = inventory.products.find(
-          (p) => p.productId.toString() === item.productId.toString()
+          (p:any) => p.productId.toString() === item.productId.toString(),
         );
         if (inventoryProduct) {
           inventoryProduct.quantity -= item.quantity;
@@ -229,22 +250,28 @@ class OrderController {
       }
       await inventory.save({ session });
 
-      // Update ZoneDailyProfitLossModel for the order date
+      // Update ZoneDailyProfitLossModel
       const orderDate = order.orderDate;
-      const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
-
-      console.log("Formatted date:", formattedDate); // Debugging 
+      const formattedDate = `${String(orderDate.getDate()).padStart(2, "0")}-${String(
+        orderDate.getMonth() + 1,
+      ).padStart(2, "0")}-${String(orderDate.getFullYear() % 100).padStart(2, "0")}`;
+      console.log("Formatted date:", formattedDate);
 
       const report = await ZoneDailyProfitLossModel.findOne({
         store_id: order.storeId,
         date: formattedDate,
       }).session(session);
+
       if (report) {
         report.total_sale_amount += order.totalAmount;
+        if (isCashOnDelivery) {
+          report.cash_on_delivery_amount += order.totalAmount;
+        } else {
+          report.online_payment_amount += order.totalAmount;
+        }
         report.total_orders += 1;
         report.avg_order_value = report.total_sale_amount / report.total_orders;
 
-        // Update most sold product
         const productSales = new Map<string, number>();
         for (const item of products) {
           const productId = item.productId.toString();
@@ -262,11 +289,15 @@ class OrderController {
           report.most_selling_product_id = new mongoose.Types.ObjectId(mostSellingProductId).toString();
           report.most_selling_quantity = maxQuantity;
         }
-        report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+        report.net_profit_or_loss =
+          report.total_sale_amount -
+          report.total_fixed_cost -
+          report.labour_cost -
+          report.packaging_cost;
         report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
 
         await report.save({ session });
-        console.log("REPOR SAVED", report); // Debugging
+        console.log("REPORT SAVED", report);
       } else {
         const newReport = new ZoneDailyProfitLossModel({
           store_id: storeId,
@@ -274,6 +305,8 @@ class OrderController {
           total_sale_amount: order.totalAmount,
           total_purchase_cost: 0,
           total_fixed_cost: 0,
+          cash_on_delivery_amount: isCashOnDelivery ? order.totalAmount : 0,
+          online_payment_amount: isCashOnDelivery ? 0 : order.totalAmount,
           labour_cost: 0,
           packaging_cost: 0,
           net_profit_or_loss: order.totalAmount,
@@ -285,7 +318,7 @@ class OrderController {
           created_at: new Date().toISOString(),
         });
         await newReport.save({ session });
-        console.log("New report created:", newReport); // Debugging
+        console.log("New report created:", newReport);
       }
 
       // Create invoice
@@ -297,20 +330,37 @@ class OrderController {
           email: user.email,
           phone: user.phone,
         },
-        totalAmount: totalAmount - discountAmount - walletAmountUsed, // Adjust total after wallet
+        totalAmount: totalAmount - discountAmount - walletAmountUsed,
         paymentStatus: isCashOnDelivery ? PaymentStatus.Pending : PaymentStatus.Pending,
         shippingAmount: 50,
         discount: discountAmount,
-        walletAmount: walletAmountUsed, // Record wallet amount in invoice
+        walletAmount: walletAmountUsed,
         billingAddress: deliveryAddress,
         shippingAddress: deliveryAddress,
         orderDate: new Date(),
         items: itemsForInvoice,
-        paymentMode: isCashOnDelivery ? "Cash on Delivery" : walletAmountUsed >= (totalAmount - discountAmount) ? "Wallet" : "Online Payment",
+        paymentMode: isCashOnDelivery
+          ? "Cash on Delivery"
+          : walletAmountUsed >= totalAmount - discountAmount
+            ? "Wallet"
+            : "Online Payment",
       };
-
       const invoice = new Invoice(invoiceData);
       await invoice.save({ session });
+
+      // Send order confirmation email
+      try {
+        await sendOrderCreatedMail({
+          orderId: order.orderId,
+          items: itemsForInvoice,
+          totalAmount: order.totalAmount,
+          createdAt: order.orderDate,
+          storeId: order.storeId.toString(),
+          userId: order.userId.toString(),
+        });
+      } catch (emailError) {
+        console.error(`Failed to send order confirmation email for order #${order.orderId}:`, emailError);
+      }
 
       await session.commitTransaction();
       res.status(201).json({
@@ -319,7 +369,7 @@ class OrderController {
         message: "Order and invoice created successfully",
       });
     } catch (error: any) {
-      // Revert coupon usedUsers if coupon was applied
+      // Revert coupon
       if (appliedCoupon && appliedCoupon.couponId) {
         const coupon = await Coupon.findById(appliedCoupon.couponId).session(session);
         if (coupon && coupon.usedUsers.includes(userId)) {
@@ -328,13 +378,16 @@ class OrderController {
         }
       }
 
-      // Revert wallet changes if wallet was used
+      // Revert wallet
       if (walletAmount > 0) {
         const wallet = await UserWallet.findOne({ userId }).session(session);
-        if (wallet && wallet.transaction_history.some(t => t.description.includes(`Order payment for order `))) {
+        if (
+          wallet &&
+          wallet.transaction_history.some((t) => t.description.includes(`Order payment for order `))
+        ) {
           wallet.current_amount += walletAmount;
           wallet.transaction_history = wallet.transaction_history.filter(
-            t => !t.description.includes(`Order payment for order `)
+            (t) => !t.description.includes(`Order payment for order `),
           );
           await wallet.save({ session });
         }
@@ -350,8 +403,12 @@ class OrderController {
     }
   }
 
-  // Cancel an order (Transaction-based)
-  async cancelOrder(req: Request, res: Response) {
+  /**
+   * Cancel an order (Transaction-based)
+   * @param req Express request object
+   * @param res Express response object
+   */
+  async cancelOrder(req: Request, res: Response): Promise<void> {
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -377,7 +434,7 @@ class OrderController {
 
       for (const item of order.products) {
         const inventoryProduct = inventory.products.find(
-          (p) => p.productId.toString() === item.productId.toString()
+          (p:any) => p.productId.toString() === item.productId.toString(),
         );
         if (inventoryProduct) {
           inventoryProduct.quantity += item.quantity;
@@ -402,11 +459,12 @@ class OrderController {
         throw new Error("Invoice not found for this order");
       }
 
-      // Update ZoneDailyProfitLossModel for the order date
-      const orderDate= order.orderDate;
-      const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
-
-      console.log("Formatted date:", formattedDate); // Debugging 
+      // Update ZoneDailyProfitLossModel
+      const orderDate = order.orderDate;
+      const formattedDate = `${String(orderDate.getDate()).padStart(2, "0")}-${String(
+        orderDate.getMonth() + 1,
+      ).padStart(2, "0")}-${String(orderDate.getFullYear() % 100).padStart(2, "0")}`;
+      console.log("Formatted date:", formattedDate);
 
       const report = await ZoneDailyProfitLossModel.findOne({
         store_id: order.storeId,
@@ -418,10 +476,14 @@ class OrderController {
         report.total_orders -= 1;
         report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
 
-        // Recalculate most sold product
         const productSales = new Map<string, number>();
-        const allOrders = await Order.find({ storeId: order.storeId, orderDate: { $gte: orderDate, $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000) } })
-          .session(session);
+        const allOrders = await Order.find({
+          storeId: order.storeId,
+          orderDate: {
+            $gte: orderDate,
+            $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000),
+          },
+        }).session(session);
         for (const ord of allOrders) {
           for (const item of ord.products) {
             const productId = item.productId.toString();
@@ -444,9 +506,12 @@ class OrderController {
           report.most_selling_quantity = 0;
         }
 
-        report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+        report.net_profit_or_loss =
+          report.total_sale_amount -
+          report.total_fixed_cost -
+          report.labour_cost -
+          report.packaging_cost;
         report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
-
         await report.save({ session });
       }
 
@@ -467,8 +532,12 @@ class OrderController {
     }
   }
 
-  // Update order status (Transaction-based)
-  async updateOrderStatus(req: Request, res: Response) {
+  /**
+   * Update order status (Transaction-based)
+   * @param req Express request object
+   * @param res Express response object
+   */
+  async updateOrderStatus(req: Request, res: Response): Promise<void> {
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -500,7 +569,7 @@ class OrderController {
         throw new Error(`Cannot transition from ${order.status} to ${status}`);
       }
 
-      // If status is Cancelled, restock inventory and update sales report
+      // Handle cancellation
       if (status === OrderStatus.Cancelled) {
         const inventory = await Inventory.findOne({ storeId: order.storeId }).session(session);
         if (!inventory) {
@@ -509,7 +578,7 @@ class OrderController {
 
         for (const item of order.products) {
           const inventoryProduct = inventory.products.find(
-            (p) => p.productId.toString() === item.productId.toString()
+            (p:any) => p.productId.toString() === item.productId.toString(),
           );
           if (inventoryProduct) {
             inventoryProduct.quantity += item.quantity;
@@ -520,26 +589,31 @@ class OrderController {
         }
         await inventory.save({ session });
 
-        // Update ZoneDailyProfitLossModel for the order date
-        const orderDate= order.orderDate;
-      const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
+        const orderDate = order.orderDate;
+        const formattedDate = `${String(orderDate.getDate()).padStart(2, "0")}-${String(
+          orderDate.getMonth() + 1,
+        ).padStart(2, "0")}-${String(orderDate.getFullYear() % 100).padStart(2, "0")}`;
+        console.log("Formatted date:", formattedDate);
 
-      console.log("Formatted date:", formattedDate); // Debugging 
-
-      const report = await ZoneDailyProfitLossModel.findOne({
-        store_id: order.storeId,
-        date: formattedDate,
-      }).session(session);
+        const report = await ZoneDailyProfitLossModel.findOne({
+          store_id: order.storeId,
+          date: formattedDate,
+        }).session(session);
 
         if (report) {
           report.total_sale_amount -= order.totalAmount;
           report.total_orders -= 1;
-          report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
+          report.avg_order_value =
+            report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
 
-          // Recalculate most sold product
           const productSales = new Map<string, number>();
-          const allOrders = await Order.find({ storeId: order.storeId, orderDate: { $gte: orderDate, $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000) } })
-            .session(session);
+          const allOrders = await Order.find({
+            storeId: order.storeId,
+            orderDate: {
+              $gte: orderDate,
+              $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000),
+            },
+          }).session(session);
           for (const ord of allOrders) {
             for (const item of ord.products) {
               const productId = item.productId.toString();
@@ -558,17 +632,20 @@ class OrderController {
             report.most_selling_product_id = new mongoose.Types.ObjectId(mostSellingProductId).toString();
             report.most_selling_quantity = maxQuantity;
           } else {
-            report.most_selling_product_id = 
-            "";
+            report.most_selling_product_id = "";
             report.most_selling_quantity = 0;
           }
-          report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+          report.net_profit_or_loss =
+            report.total_sale_amount -
+            report.total_fixed_cost -
+            report.labour_cost -
+            report.packaging_cost;
           report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
           await report.save({ session });
         }
       }
 
-      // Update order status and payment status
+      // Update order and payment status
       order.status = status;
       if (status === OrderStatus.Delivered && !order.isCashOnDelivery) {
         order.paymentStatus = PaymentStatus.Paid;
@@ -577,7 +654,7 @@ class OrderController {
       }
       await order.save({ session });
 
-      // Update invoice payment status
+      // Update invoice
       const invoice = await Invoice.findOne({ orderId }).session(session);
       if (invoice) {
         if (status === OrderStatus.Delivered && !order.isCashOnDelivery) {
@@ -607,8 +684,12 @@ class OrderController {
     }
   }
 
-  // Get order by ID (Transaction-based)
-  async getOrderById(req: Request, res: Response) {
+  /**
+   * Get order by ID (Transaction-based)
+   * @param req Express request object
+   * @param res Express response object
+   */
+  async getOrderById(req: Request, res: Response): Promise<void> {
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -657,8 +738,12 @@ class OrderController {
     }
   }
 
-  // Get all orders for a user (Transaction-based)
-  async getUserOrders(req: Request, res: Response) {
+  /**
+   * Get all orders for a user (Transaction-based)
+   * @param req Express request object
+   * @param res Express response object
+   */
+  async getUserOrders(req: Request, res: Response): Promise<void> {
     const session = await mongoose.startSession();
     session.startTransaction();
 

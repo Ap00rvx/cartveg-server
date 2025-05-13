@@ -21,4 +21,5 @@ const upload = (0, multer_1.default)({
 router.get("/store-report", storeadmin_middleware_1.verifyStoreAdmin, report_controller_1.default.getStoreReport);
 router.post("/upload-purchase-report", storeadmin_middleware_1.verifyStoreAdmin, upload.single("file"), report_controller_1.default.uploadPurchaseDoc);
 router.get("/get-purchase-report", storeadmin_middleware_1.verifyStoreAdmin, report_controller_1.default.getPurchaseReport);
+router.get("/download-template", report_controller_1.default.downloadPurchaseTemplate);
 exports.default = router;

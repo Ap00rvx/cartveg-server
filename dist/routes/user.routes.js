@@ -7,6 +7,7 @@ const router = (0, express_1.Router)();
 router.post("/authenticate", user_controller_1.authenticate);
 router.post("/verify-otp", user_controller_1.verifyOtp);
 router.post("/save", user_middleware_1.authenticateUser, user_controller_1.saveUserDetails);
+router.get("/app", user_controller_1.getAppDetails);
 router.post("/add-address", user_middleware_1.authenticateUser, user_controller_1.addAddress);
 router.delete("/remove-address", user_middleware_1.authenticateUser, user_controller_1.addAddress);
 router.get("/", user_middleware_1.authenticateUser, user_controller_1.getUserDetails);

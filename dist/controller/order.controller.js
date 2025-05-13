@@ -13,60 +13,71 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importDefault(require("mongoose"));
-const order_model_1 = __importDefault(require("../models/order.model"));
-const store_model_1 = require("../models/store.model");
+const coupon_model_1 = __importDefault(require("../models/coupon.model"));
 const inventory_model_1 = require("../models/inventory.model");
 const invoice_model_1 = __importDefault(require("../models/invoice.model"));
-const user_model_1 = __importDefault(require("../models/user.model"));
-const coupon_model_1 = __importDefault(require("../models/coupon.model"));
-const interface_1 = require("../types/interface/interface");
+const order_model_1 = __importDefault(require("../models/order.model"));
 const product_model_1 = __importDefault(require("../models/product.model"));
-const report_models_1 = __importDefault(require("../models/report.models"));
+const store_model_1 = require("../models/store.model");
+const user_model_1 = __importDefault(require("../models/user.model"));
 const wallet_model_1 = require("../models/wallet.model");
-const calculateOrderTotals = (products, session) => __awaiter(void 0, void 0, void 0, function* () {
-    let totalAmount = 0;
-    let totalItems = 0;
-    const itemsForInvoice = [];
-    for (const item of products) {
-        const product = yield product_model_1.default.findById(item.productId).session(session);
-        if (!product) {
-            throw new Error(`Product with ID ${item.productId} not found`);
+const report_models_1 = __importDefault(require("../models/report.models"));
+const interface_1 = require("../types/interface/interface");
+const nodemailer_1 = require("../config/nodemailer");
+// Helper function to calculate order totals
+function calculateOrderTotals(products, session) {
+    return __awaiter(this, void 0, void 0, function* () {
+        let totalAmount = 0;
+        let totalItems = 0;
+        const itemsForInvoice = [];
+        for (const item of products) {
+            const product = yield product_model_1.default.findById(item.productId).session(session);
+            if (!product) {
+                throw new Error(`Product with ID ${item.productId} not found`);
+            }
+            totalAmount += product.price * item.quantity;
+            totalItems += item.quantity;
+            itemsForInvoice.push({
+                name: product.name,
+                quantity: item.quantity,
+                price: product.price,
+            });
         }
-        totalAmount += product.price * item.quantity;
-        totalItems += item.quantity;
-        itemsForInvoice.push({
-            name: product.name,
-            quantity: item.quantity,
-            price: product.price,
-        });
-    }
-    return { totalAmount, totalItems, itemsForInvoice };
-});
+        return { totalAmount, totalItems, itemsForInvoice };
+    });
+}
 // Order Controller
 class OrderController {
-    // Create a new order (Transaction-based)
+    /**
+     * Create a new order (Transaction-based)
+     * @param req Express request object
+     * @param res Express response object
+     */
     createOrder(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             var _a, _b;
             const session = yield mongoose_1.default.startSession();
             session.startTransaction();
-            const { userId, products, storeId, isCashOnDelivery, deliveryAddress, appliedCoupon, walletAmount = 0, // New field for wallet amount to use
-             } = req.body;
+            const { userId, products, storeId, isCashOnDelivery, deliveryAddress, appliedCoupon, walletAmount = 0, } = req.body;
             try {
-                // Validate required fields
-                if (!userId || !products || !products.length || !storeId || !deliveryAddress || isCashOnDelivery === undefined) {
+                // Validation
+                if (!userId ||
+                    !products ||
+                    !products.length ||
+                    !storeId ||
+                    !deliveryAddress ||
+                    isCashOnDelivery === undefined) {
                     throw new Error("Missing required fields: userId, products, storeId, deliveryAddress, isCashOnDelivery");
                 }
-                // Validate userId
                 if (!mongoose_1.default.Types.ObjectId.isValid(userId)) {
                     throw new Error("Invalid user ID");
                 }
-                // Fetch user details from User model
+                // Fetch user
                 const user = yield user_model_1.default.findById(userId).session(session);
                 if (!user) {
                     throw new Error("User not found");
                 }
-                // Validate store exists
+                // Validate store
                 const store = yield store_model_1.Store.findById(storeId).session(session);
                 if (!store) {
                     throw new Error("Store not found");
@@ -90,7 +101,7 @@ class OrderController {
                 }
                 // Calculate totals
                 const { totalAmount, totalItems, itemsForInvoice } = yield calculateOrderTotals(products, session);
-                // Apply coupon discount if provided
+                // Apply coupon discount
                 let discountAmount = 0;
                 let coupon = null;
                 if (appliedCoupon && appliedCoupon.couponId) {
@@ -134,13 +145,11 @@ class OrderController {
                         throw new Error(`Insufficient wallet balance. Available: ${wallet.current_amount}, Requested: ${walletAmount}`);
                     }
                     const finalAmountAfterDiscount = totalAmount - discountAmount;
-                    walletAmountUsed = Math.min(walletAmount, finalAmountAfterDiscount); // Use wallet amount up to order total
+                    walletAmountUsed = Math.min(walletAmount, finalAmountAfterDiscount);
                     if (walletAmountUsed <= 0) {
                         throw new Error("Wallet amount cannot cover any part of the order after discounts");
                     }
-                    // Deduct wallet amount
                     wallet.current_amount -= walletAmountUsed;
-                    // Record transaction in wallet history
                     wallet.transaction_history.push({
                         amount: walletAmountUsed,
                         type: "debit",
@@ -150,7 +159,7 @@ class OrderController {
                     });
                     yield wallet.save({ session });
                 }
-                // Generate orderId and invoiceId
+                // Generate IDs
                 const timestamp = Date.now();
                 const orderId = `ORD-${timestamp}`;
                 const invoiceId = `INV-ORD-${timestamp}`;
@@ -160,7 +169,7 @@ class OrderController {
                     userId: new mongoose_1.default.Types.ObjectId(userId),
                     products,
                     storeId: new mongoose_1.default.Types.ObjectId(storeId),
-                    totalAmount: totalAmount - discountAmount - walletAmountUsed, // Adjust total after wallet
+                    totalAmount: totalAmount - discountAmount - walletAmountUsed,
                     shippingAmount: 50,
                     totalItems,
                     isCashOnDelivery,
@@ -173,7 +182,7 @@ class OrderController {
                             discountAmount,
                         }
                         : undefined,
-                    wallet_amount_used: walletAmountUsed, // Record wallet amount used
+                    wallet_amount_used: walletAmountUsed,
                     status: interface_1.OrderStatus.Placed,
                     paymentStatus: isCashOnDelivery ? interface_1.PaymentStatus.Pending : interface_1.PaymentStatus.Pending,
                     rzpOrderId: isCashOnDelivery ? undefined : `RZP-${timestamp}`,
@@ -198,19 +207,24 @@ class OrderController {
                     }
                 }
                 yield inventory.save({ session });
-                // Update ZoneDailyProfitLossModel for the order date
+                // Update ZoneDailyProfitLossModel
                 const orderDate = order.orderDate;
-                const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
-                console.log("Formatted date:", formattedDate); // Debugging 
+                const formattedDate = `${String(orderDate.getDate()).padStart(2, "0")}-${String(orderDate.getMonth() + 1).padStart(2, "0")}-${String(orderDate.getFullYear() % 100).padStart(2, "0")}`;
+                console.log("Formatted date:", formattedDate);
                 const report = yield report_models_1.default.findOne({
                     store_id: order.storeId,
                     date: formattedDate,
                 }).session(session);
                 if (report) {
                     report.total_sale_amount += order.totalAmount;
+                    if (isCashOnDelivery) {
+                        report.cash_on_delivery_amount += order.totalAmount;
+                    }
+                    else {
+                        report.online_payment_amount += order.totalAmount;
+                    }
                     report.total_orders += 1;
                     report.avg_order_value = report.total_sale_amount / report.total_orders;
-                    // Update most sold product
                     const productSales = new Map();
                     for (const item of products) {
                         const productId = item.productId.toString();
@@ -228,10 +242,14 @@ class OrderController {
                         report.most_selling_product_id = new mongoose_1.default.Types.ObjectId(mostSellingProductId).toString();
                         report.most_selling_quantity = maxQuantity;
                     }
-                    report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+                    report.net_profit_or_loss =
+                        report.total_sale_amount -
+                            report.total_fixed_cost -
+                            report.labour_cost -
+                            report.packaging_cost;
                     report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
                     yield report.save({ session });
-                    console.log("REPOR SAVED", report); // Debugging
+                    console.log("REPORT SAVED", report);
                 }
                 else {
                     const newReport = new report_models_1.default({
@@ -240,6 +258,8 @@ class OrderController {
                         total_sale_amount: order.totalAmount,
                         total_purchase_cost: 0,
                         total_fixed_cost: 0,
+                        cash_on_delivery_amount: isCashOnDelivery ? order.totalAmount : 0,
+                        online_payment_amount: isCashOnDelivery ? 0 : order.totalAmount,
                         labour_cost: 0,
                         packaging_cost: 0,
                         net_profit_or_loss: order.totalAmount,
@@ -251,7 +271,7 @@ class OrderController {
                         created_at: new Date().toISOString(),
                     });
                     yield newReport.save({ session });
-                    console.log("New report created:", newReport); // Debugging
+                    console.log("New report created:", newReport);
                 }
                 // Create invoice
                 const invoiceData = {
@@ -262,19 +282,37 @@ class OrderController {
                         email: user.email,
                         phone: user.phone,
                     },
-                    totalAmount: totalAmount - discountAmount - walletAmountUsed, // Adjust total after wallet
+                    totalAmount: totalAmount - discountAmount - walletAmountUsed,
                     paymentStatus: isCashOnDelivery ? interface_1.PaymentStatus.Pending : interface_1.PaymentStatus.Pending,
                     shippingAmount: 50,
                     discount: discountAmount,
-                    walletAmount: walletAmountUsed, // Record wallet amount in invoice
+                    walletAmount: walletAmountUsed,
                     billingAddress: deliveryAddress,
                     shippingAddress: deliveryAddress,
                     orderDate: new Date(),
                     items: itemsForInvoice,
-                    paymentMode: isCashOnDelivery ? "Cash on Delivery" : walletAmountUsed >= (totalAmount - discountAmount) ? "Wallet" : "Online Payment",
+                    paymentMode: isCashOnDelivery
+                        ? "Cash on Delivery"
+                        : walletAmountUsed >= totalAmount - discountAmount
+                            ? "Wallet"
+                            : "Online Payment",
                 };
                 const invoice = new invoice_model_1.default(invoiceData);
                 yield invoice.save({ session });
+                // Send order confirmation email
+                try {
+                    yield (0, nodemailer_1.sendOrderCreatedMail)({
+                        orderId: order.orderId,
+                        items: itemsForInvoice,
+                        totalAmount: order.totalAmount,
+                        createdAt: order.orderDate,
+                        storeId: order.storeId.toString(),
+                        userId: order.userId.toString(),
+                    });
+                }
+                catch (emailError) {
+                    console.error(`Failed to send order confirmation email for order #${order.orderId}:`, emailError);
+                }
                 yield session.commitTransaction();
                 res.status(201).json({
                     success: true,
@@ -283,7 +321,7 @@ class OrderController {
                 });
             }
             catch (error) {
-                // Revert coupon usedUsers if coupon was applied
+                // Revert coupon
                 if (appliedCoupon && appliedCoupon.couponId) {
                     const coupon = yield coupon_model_1.default.findById(appliedCoupon.couponId).session(session);
                     if (coupon && coupon.usedUsers.includes(userId)) {
@@ -291,12 +329,13 @@ class OrderController {
                         yield coupon.save({ session });
                     }
                 }
-                // Revert wallet changes if wallet was used
+                // Revert wallet
                 if (walletAmount > 0) {
                     const wallet = yield wallet_model_1.UserWallet.findOne({ userId }).session(session);
-                    if (wallet && wallet.transaction_history.some(t => t.description.includes(`Order payment for order `))) {
+                    if (wallet &&
+                        wallet.transaction_history.some((t) => t.description.includes(`Order payment for order `))) {
                         wallet.current_amount += walletAmount;
-                        wallet.transaction_history = wallet.transaction_history.filter(t => !t.description.includes(`Order payment for order `));
+                        wallet.transaction_history = wallet.transaction_history.filter((t) => !t.description.includes(`Order payment for order `));
                         yield wallet.save({ session });
                     }
                 }
@@ -311,7 +350,11 @@ class OrderController {
             }
         });
     }
-    // Cancel an order (Transaction-based)
+    /**
+     * Cancel an order (Transaction-based)
+     * @param req Express request object
+     * @param res Express response object
+     */
     cancelOrder(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             const session = yield mongoose_1.default.startSession();
@@ -356,10 +399,10 @@ class OrderController {
                 else {
                     throw new Error("Invoice not found for this order");
                 }
-                // Update ZoneDailyProfitLossModel for the order date
+                // Update ZoneDailyProfitLossModel
                 const orderDate = order.orderDate;
-                const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
-                console.log("Formatted date:", formattedDate); // Debugging 
+                const formattedDate = `${String(orderDate.getDate()).padStart(2, "0")}-${String(orderDate.getMonth() + 1).padStart(2, "0")}-${String(orderDate.getFullYear() % 100).padStart(2, "0")}`;
+                console.log("Formatted date:", formattedDate);
                 const report = yield report_models_1.default.findOne({
                     store_id: order.storeId,
                     date: formattedDate,
@@ -368,10 +411,14 @@ class OrderController {
                     report.total_sale_amount -= order.totalAmount;
                     report.total_orders -= 1;
                     report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
-                    // Recalculate most sold product
                     const productSales = new Map();
-                    const allOrders = yield order_model_1.default.find({ storeId: order.storeId, orderDate: { $gte: orderDate, $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000) } })
-                        .session(session);
+                    const allOrders = yield order_model_1.default.find({
+                        storeId: order.storeId,
+                        orderDate: {
+                            $gte: orderDate,
+                            $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000),
+                        },
+                    }).session(session);
                     for (const ord of allOrders) {
                         for (const item of ord.products) {
                             const productId = item.productId.toString();
@@ -394,7 +441,11 @@ class OrderController {
                         report.most_selling_product_id = "";
                         report.most_selling_quantity = 0;
                     }
-                    report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+                    report.net_profit_or_loss =
+                        report.total_sale_amount -
+                            report.total_fixed_cost -
+                            report.labour_cost -
+                            report.packaging_cost;
                     report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
                     yield report.save({ session });
                 }
@@ -417,7 +468,11 @@ class OrderController {
             }
         });
     }
-    // Update order status (Transaction-based)
+    /**
+     * Update order status (Transaction-based)
+     * @param req Express request object
+     * @param res Express response object
+     */
     updateOrderStatus(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             const session = yield mongoose_1.default.startSession();
@@ -445,7 +500,7 @@ class OrderController {
                 if (!validTransitions[order.status].includes(status)) {
                     throw new Error(`Cannot transition from ${order.status} to ${status}`);
                 }
-                // If status is Cancelled, restock inventory and update sales report
+                // Handle cancellation
                 if (status === interface_1.OrderStatus.Cancelled) {
                     const inventory = yield inventory_model_1.Inventory.findOne({ storeId: order.storeId }).session(session);
                     if (!inventory) {
@@ -462,10 +517,9 @@ class OrderController {
                         }
                     }
                     yield inventory.save({ session });
-                    // Update ZoneDailyProfitLossModel for the order date
                     const orderDate = order.orderDate;
-                    const formattedDate = `${String(orderDate.getDate()).padStart(2, '0')}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getFullYear() % 100).padStart(2, '0')}`;
-                    console.log("Formatted date:", formattedDate); // Debugging 
+                    const formattedDate = `${String(orderDate.getDate()).padStart(2, "0")}-${String(orderDate.getMonth() + 1).padStart(2, "0")}-${String(orderDate.getFullYear() % 100).padStart(2, "0")}`;
+                    console.log("Formatted date:", formattedDate);
                     const report = yield report_models_1.default.findOne({
                         store_id: order.storeId,
                         date: formattedDate,
@@ -473,11 +527,16 @@ class OrderController {
                     if (report) {
                         report.total_sale_amount -= order.totalAmount;
                         report.total_orders -= 1;
-                        report.avg_order_value = report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
-                        // Recalculate most sold product
+                        report.avg_order_value =
+                            report.total_orders > 0 ? report.total_sale_amount / report.total_orders : 0;
                         const productSales = new Map();
-                        const allOrders = yield order_model_1.default.find({ storeId: order.storeId, orderDate: { $gte: orderDate, $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000) } })
-                            .session(session);
+                        const allOrders = yield order_model_1.default.find({
+                            storeId: order.storeId,
+                            orderDate: {
+                                $gte: orderDate,
+                                $lt: new Date(orderDate.getTime() + 24 * 60 * 60 * 1000),
+                            },
+                        }).session(session);
                         for (const ord of allOrders) {
                             for (const item of ord.products) {
                                 const productId = item.productId.toString();
@@ -497,16 +556,19 @@ class OrderController {
                             report.most_selling_quantity = maxQuantity;
                         }
                         else {
-                            report.most_selling_product_id =
-                                "";
+                            report.most_selling_product_id = "";
                             report.most_selling_quantity = 0;
                         }
-                        report.net_profit_or_loss = report.total_sale_amount - report.total_fixed_cost - report.labour_cost - report.packaging_cost;
+                        report.net_profit_or_loss =
+                            report.total_sale_amount -
+                                report.total_fixed_cost -
+                                report.labour_cost -
+                                report.packaging_cost;
                         report.status = report.net_profit_or_loss >= 0 ? "Profit" : "Loss";
                         yield report.save({ session });
                     }
                 }
-                // Update order status and payment status
+                // Update order and payment status
                 order.status = status;
                 if (status === interface_1.OrderStatus.Delivered && !order.isCashOnDelivery) {
                     order.paymentStatus = interface_1.PaymentStatus.Paid;
@@ -515,7 +577,7 @@ class OrderController {
                     order.paymentStatus = interface_1.PaymentStatus.Cancelled;
                 }
                 yield order.save({ session });
-                // Update invoice payment status
+                // Update invoice
                 const invoice = yield invoice_model_1.default.findOne({ orderId }).session(session);
                 if (invoice) {
                     if (status === interface_1.OrderStatus.Delivered && !order.isCashOnDelivery) {
@@ -548,7 +610,11 @@ class OrderController {
             }
         });
     }
-    // Get order by ID (Transaction-based)
+    /**
+     * Get order by ID (Transaction-based)
+     * @param req Express request object
+     * @param res Express response object
+     */
     getOrderById(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             const session = yield mongoose_1.default.startSession();
@@ -596,7 +662,11 @@ class OrderController {
             }
         });
     }
-    // Get all orders for a user (Transaction-based)
+    /**
+     * Get all orders for a user (Transaction-based)
+     * @param req Express request object
+     * @param res Express response object
+     */
     getUserOrders(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             const session = yield mongoose_1.default.startSession();

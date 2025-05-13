@@ -6,7 +6,7 @@ import {generateAdminToken} from "../config/helpers" ;
 import { sendAdminLoginAlert } from "../config/nodemailer";
 import { InterServerError, SuccessResponse } from "../types/types/types";
 import { SortOrder } from "mongoose";
-import { IAddress, IStore, IUser, PaymentStatus } from "../types/interface/interface";
+import { CouponType, IAddress, IStore, IUser, PaymentStatus } from "../types/interface/interface";
 import cache from "../config/cache";
 import Papa from "papaparse";
 import Order from "../models/order.model";
@@ -24,6 +24,7 @@ import Cashback from "../models/cashback.model";
 import { IAppDetails } from "../types/interface/i.app-details";
 import { AppDetails } from "../models/app.model";
 import ZoneDailyProfitLossModel from "../models/report.models";
+import { UserWallet } from "../models/wallet.model";
 
 export const createMultipleProducts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -712,53 +713,123 @@ export const sendNotification = async (req: Request, res: Response): Promise<voi
         });
     }
 };
- 
-export const createCouponCode = async(req: Request, res: Response): Promise<void> => {
-    try {
-        const { code, expiry, minValue, maxUsage, offValue } = req.body;
-        
-        // Validate required fields
-        if(!code || !expiry || !minValue || !maxUsage || !offValue) {
-             res.status(400).json({
-                success: false,
-                message: "All fields are required: code, expiry, minValue, maxUsage, offValue"
-            });
-            return
-        }
-        
-        // Check if coupon code already exists
-        const existingCoupon = await Coupon.findOne({ code });
-        if(existingCoupon) {
-             res.status(400).json({
-                success: false,
-                message: "Coupon code already exists"
-            });
-            return
-        }
-        
-        // Create new coupon
-        const coupon = await Coupon.create({
-            couponCode: code,
-            expiry: new Date(expiry),
-            minValue,
-            maxUsage,
-            offValue
-        });
-        
-         res.status(201).json({
-            success: true,
-            message: "Coupon created successfully",
-            coupon
-        }); return; 
-    } catch(error:any ) {
-        console.error("Error creating coupon:", error);
-         res.status(500).json({
-            success: false,
-            message: "Something went wrong while creating coupon",
-            error: error.message
-        });
-        return; 
+ export const createCouponCode = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { code, expiry, minValue, maxUsage, offValue, couponType, minOrders, isActive, isDeleted } =
+      req.body;
+
+    // Validate required fields
+    if (!code || !expiry || minValue === undefined || !maxUsage || offValue === undefined || !couponType) {
+      res.status(400).json({
+        success: false,
+        message: "All fields are required: code, expiry, minValue, maxUsage, offValue, couponType",
+      });
+      return;
     }
+
+    // Validate couponType
+    if (!Object.values(CouponType).includes(couponType)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid couponType. Must be 'MaxUsage' or 'MinOrders'",
+      });
+      return;
+    }
+
+    // Validate minOrders for MinOrders coupon type
+    if (couponType === CouponType.MinOrders) {
+      if (minOrders === undefined || !Number.isInteger(minOrders) || minOrders < 0) {
+        res.status(400).json({
+          success: false,
+          message: "minOrders must be a non-negative integer for MinOrders coupon type",
+        });
+        return;
+      }
+    } else if (minOrders !== undefined && minOrders !== null) {
+      res.status(400).json({
+        success: false,
+        message: "minOrders must be null or undefined for MaxUsage coupon type",
+      });
+      return;
+    }
+
+    // Validate numeric fields
+    if (minValue < 0) {
+      res.status(400).json({
+        success: false,
+        message: "minValue must be non-negative",
+      });
+      return;
+    }
+    if (maxUsage < 1) {
+      res.status(400).json({
+        success: false,
+        message: "maxUsage must be at least 1",
+      });
+      return;
+    }
+    if (offValue <= 0) {
+      res.status(400).json({
+        success: false,
+        message: "offValue must be positive",
+      });
+      return;
+    }
+
+    // Validate expiry date
+    const expiryDate = new Date(expiry);
+    if (isNaN(expiryDate.getTime())) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid expiry date format. Use ISO 8601 (e.g., '2025-12-31T23:59:59.999Z')",
+      });
+      return;
+    }
+    if (expiryDate <= new Date()) {
+      res.status(400).json({
+        success: false,
+        message: "Expiry date must be in the future",
+      });
+      return;
+    }
+
+    // Check if coupon code already exists
+    const existingCoupon = await Coupon.findOne({ couponCode: code });
+    if (existingCoupon) {
+      res.status(400).json({
+        success: false,
+        message: "Coupon code already exists",
+      });
+      return;
+    }
+
+    // Create new coupon
+    const coupon = await Coupon.create({
+      couponCode: code,
+      expiry: expiryDate,
+      minValue,
+      maxUsage,
+      offValue,
+      couponType,
+      minOrders: couponType === CouponType.MinOrders ? minOrders : null,
+      isActive: isActive !== undefined ? isActive : true,
+      isDeleted: isDeleted !== undefined ? isDeleted : false,
+      usedUsers: [],
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Coupon created successfully",
+      coupon,
+    });
+  } catch (error: any) {
+    console.error("Error creating coupon:", error);
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong while creating coupon",
+      error: error.message,
+    });
+  }
 };
 
 export const getAllCoupons = async(req: Request, res: Response): Promise<void> => {
@@ -1594,7 +1665,7 @@ export const getAllAdmins = async (req: Request, res: Response): Promise<void> =
     }
   };
 
-  export const createAppDetails = async (req: Request, res: Response): Promise<void> => {
+export const createAppDetails = async (req: Request, res: Response): Promise<void> => {
     try{
         const { appName, deliveryTime, bannerImages, privacyPolicy,termsAndConditions,aboutUs,address,contactno,email,refAmount } = req.body as Partial<IAppDetails>;
         const appDetails = await AppDetails.create({
@@ -1873,4 +1944,76 @@ export const getSuperAdminAnalysis = async (req: Request, res: Response): Promis
 
     res.status(500).json(internalServerErrorResponse);
   }
+};
+
+export const manualWalletCredit = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, amount, description } = req.body;
+
+        // Validate input
+        if (!userId || !amount || !description) {
+            res.status(400).json({
+                message: "userId, amount, and description are required",
+            });
+            return;
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            res.status(400).json({
+                message: "Invalid userId format",
+            });
+            return;
+        }
+
+        if (typeof amount !== "number" || amount <= 0) {
+            res.status(400).json({
+                message: "Amount must be a positive number",
+            });
+            return;
+        }
+
+        // Check if user exists
+        const user = await User.findById(userId);
+        if (!user) {
+            res.status(404).json({
+                message: "User not found",
+            });
+            return;
+        }
+
+        // Find or create wallet
+        let wallet = await UserWallet.findOne({ userId });
+        if (!wallet) {
+            wallet = await UserWallet.create({
+                userId: new mongoose.Types.ObjectId(userId),
+                current_amount: 0,
+                transaction_history: [],
+            });
+        }
+
+        // Create new transaction
+        const newTransaction = {
+            transactionId: new mongoose.Types.ObjectId(),
+            amount,
+            type: "credit" as "credit", // Explicitly type as "credit"
+            date: new Date(),
+            description: description as string, // Ensure description is a string
+        };
+
+        // Update wallet: add transaction and update current_amount
+        wallet.current_amount += amount;
+        wallet.transaction_history.push(newTransaction);
+        await wallet.save();
+
+        // Return the newly added transaction
+        res.status(200).json({
+            message: "Wallet credited successfully",
+            transaction: newTransaction,
+        });
+    } catch (err: any) {
+        res.status(500).json({
+            message: "Internal server error",
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+        });
+    }
 };
