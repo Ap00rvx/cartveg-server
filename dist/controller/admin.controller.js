@@ -23,13 +23,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.manualWalletCredit = exports.getSuperAdminAnalysis = exports.updateAppDetails = exports.createAppDetails = exports.updateAdmin = exports.getAllAdmins = exports.changeCashbackActiveStatus = exports.getAllCashback = exports.createCashback = exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getAllOrders = exports.createUser = exports.changeOrderStatus = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
+exports.manualWalletCredit = exports.getSuperAdminAnalysis = exports.updateAppDetails = exports.createAppDetails = exports.updateAdmin = exports.getAllAdmins = exports.changeCashbackActiveStatus = exports.getAllCashback = exports.createCashback = exports.updateStoreDetails = exports.getAllStores = exports.assignStoreManager = exports.adminLogin = exports.createAdmin = exports.createStore = exports.changeCouponStatus = exports.updateCouponDetails = exports.getAllCoupons = exports.createCouponCode = exports.sendNotification = exports.getOrderByOrderId = exports.getAllOrders = exports.createUser = exports.changeOrderStatus = exports.deleteUser = exports.updateUserDetails = exports.getAllUsers = exports.searchProducts = exports.getProductById = exports.getAllProducts = exports.deleteMultipleProducts = exports.createMultipleProducts = void 0;
 const product_model_1 = __importDefault(require("../models/product.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const helpers_1 = require("../config/helpers");
 const interface_1 = require("../types/interface/interface");
-const cache_1 = __importDefault(require("../config/cache"));
 const order_model_1 = __importDefault(require("../models/order.model"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const interface_2 = require("../types/interface/interface");
@@ -221,34 +220,64 @@ const getProductById = (req, res) => __awaiter(void 0, void 0, void 0, function*
 });
 exports.getProductById = getProductById;
 const searchProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
     try {
-        const query = (_a = req.query.query) === null || _a === void 0 ? void 0 : _a.trim().toLowerCase();
-        if (!query) {
-            res.status(400).json({ message: "Query parameter is required" });
+        // Extract query parameters with defaults
+        let { query, page = "1", limit = "10", sort = "createdAt", order = "desc", category, isAvailable } = req.query;
+        // Validate query parameter
+        if (!query || typeof query !== 'string' || query.trim() === '') {
+            res.status(400).json({
+                statusCode: 400,
+                message: 'Query parameter is required',
+            });
             return;
         }
-        // Check cache first
-        const cachedProducts = cache_1.default.get("allProducts");
-        if (cachedProducts) {
-            console.log("Serving from cache");
-            const filteredProducts = cachedProducts.filter(product => product.name.toLowerCase().includes(query)).slice(0, 20);
-            res.status(200).json({ statusCode: 200, data: filteredProducts });
-            return;
+        // Convert query params to numbers where needed
+        const pageNumber = Math.max(1, parseInt(page, 10));
+        const limitNumber = Math.max(1, parseInt(limit, 10));
+        const skip = (pageNumber - 1) * limitNumber;
+        // Sorting configuration
+        const sortOrder = order === 'asc' ? 1 : -1;
+        const sortQuery = { [sort]: sortOrder };
+        // Construct filtering criteria
+        const filter = {
+            name: { $regex: new RegExp(query.trim(), 'i') }, // Case-insensitive search in name
+        };
+        if (isAvailable !== undefined) {
+            filter.isAvailable = isAvailable === '1';
         }
-        console.log("Fetching from database...");
-        // Fetch from DB and cache it
-        const products = yield product_model_1.default.find({});
-        cache_1.default.set("allProducts", products);
-        // Filter results
-        const filteredProducts = products.filter(product => product.name.toLowerCase().includes(query)).slice(0, 20);
-        res.status(200).json({ statusCode: 200, data: filteredProducts });
+        if (category) {
+            filter.category = { $regex: new RegExp(category, 'i') }; // Case-insensitive category search
+        }
+        // Fetch products with filtering, sorting, and pagination
+        const products = yield product_model_1.default.find(filter)
+            .sort(sortQuery)
+            .skip(skip)
+            .limit(limitNumber)
+            .exec();
+        // Count total products for pagination metadata
+        const totalProducts = yield product_model_1.default.countDocuments(filter);
+        const totalPages = Math.ceil(totalProducts / limitNumber);
+        // Send response
+        res.status(200).json({
+            statusCode: 200,
+            message: 'Products retrieved successfully',
+            data: {
+                products,
+                pagination: {
+                    currentPage: pageNumber,
+                    totalPages,
+                    totalProducts,
+                    limit: limitNumber,
+                },
+            },
+        });
     }
     catch (err) {
+        console.error('Error searching products:', err);
         res.status(500).json({
             statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+            message: 'Internal server error',
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
         });
     }
 });
@@ -581,6 +610,41 @@ const getAllOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* (
     }
 });
 exports.getAllOrders = getAllOrders;
+const getOrderByOrderId = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        // Extract orderId from request parameters
+        const { orderId } = req.query;
+        // Validate orderId
+        if (!orderId) {
+            res.status(400).json({ error: 'Order ID is required' });
+            return;
+        }
+        // Fetch the order by orderId
+        const order = yield order_model_1.default.findOne({ orderId })
+            .populate('userId', 'name email phone')
+            .populate({
+            path: 'products.productId',
+            model: 'Product',
+            select: 'name price image stock category',
+        })
+            .populate('storeId', 'name address phone email openingTime', 'Store')
+            .exec();
+        // Check if order exists
+        if (!order) {
+            res.status(404).json({ error: 'Order not found' });
+            return;
+        }
+        res.status(200).json({
+            message: 'Order fetched successfully',
+            order,
+        });
+    }
+    catch (error) {
+        console.error('Error fetching order:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+exports.getOrderByOrderId = getOrderByOrderId;
 const sendNotification = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { userIds, title, body } = req.body; // Optional: userIds to filter specific users
@@ -1392,7 +1456,7 @@ const changeCashbackActiveStatus = (req, res) => __awaiter(void 0, void 0, void 
 exports.changeCashbackActiveStatus = changeCashbackActiveStatus;
 const getAllAdmins = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { page = '1', limit = '10', role, isActive } = req.query;
+        const { page = '1', limit = '1000', role, isActive } = req.query;
         // Parse pagination parameters
         const pageNumber = parseInt(page, 10);
         const pageSize = parseInt(limit, 10);

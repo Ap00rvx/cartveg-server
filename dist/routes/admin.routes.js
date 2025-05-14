@@ -22,7 +22,7 @@ router.get("/admins", admin_middleware_1.adminMiddleware, admin_controller_1.get
 router.put("/admin/update", admin_middleware_1.adminMiddleware, admin_controller_1.updateAdmin); // Route to update a category
 router.get("/products", admin_middleware_1.adminMiddleware, admin_controller_1.getAllProducts);
 router.get("/p/", admin_middleware_1.adminMiddleware, admin_controller_1.getProductById);
-router.get("/search", admin_middleware_1.adminMiddleware, admin_controller_1.searchProducts);
+router.get("/products/search", admin_controller_1.searchProducts);
 router.get("/users", admin_middleware_1.adminMiddleware, admin_controller_1.getAllUsers);
 router.get("/orders", admin_middleware_1.adminMiddleware, admin_controller_1.getAllOrders);
 router.put("/update/order", admin_middleware_1.adminMiddleware, admin_controller_1.changeOrderStatus);
@@ -35,6 +35,7 @@ router.put("/coupon/status", admin_middleware_1.adminMiddleware, admin_controlle
 router.post("/cashback/create", admin_middleware_1.adminMiddleware, admin_controller_1.createCashback);
 router.get("/cashback", admin_middleware_1.adminMiddleware, admin_controller_1.getAllCashback);
 router.put("/cashback/status", admin_middleware_1.adminMiddleware, admin_controller_1.changeCashbackActiveStatus);
+router.get("/orders/id", admin_controller_1.getOrderByOrderId);
 router.post("/wallet/add", admin_middleware_1.adminMiddleware, admin_controller_1.manualWalletCredit);
 exports.default = router;
 /// route 

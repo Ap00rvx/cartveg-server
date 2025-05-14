@@ -1,4 +1,4 @@
-import { sendNotification,createAdmin,createStore,getAllOrders,updateUserDetails,createMultipleProducts,deleteMultipleProducts,getProductById,getAllProducts,searchProducts,getAllUsers,deleteUser,getAllStores, updateStoreDetails,createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser, adminLogin, assignStoreManager, createCashback,changeCashbackActiveStatus,getAllCashback,manualWalletCredit,getAllAdmins,updateAdmin,createAppDetails,updateAppDetails,changeOrderStatus,getSuperAdminAnalysis} from "../controller/admin.controller";
+import { sendNotification,createAdmin,createStore,getAllOrders,updateUserDetails,createMultipleProducts,deleteMultipleProducts,getProductById,getAllProducts,searchProducts,getAllUsers,deleteUser,getAllStores, updateStoreDetails,createCouponCode, getAllCoupons,updateCouponDetails,changeCouponStatus,createUser, adminLogin, assignStoreManager, createCashback,changeCashbackActiveStatus,getAllCashback,getOrderByOrderId,manualWalletCredit,getAllAdmins,updateAdmin,createAppDetails,updateAppDetails,changeOrderStatus,getSuperAdminAnalysis} from "../controller/admin.controller";
 import { Router } from "express";
 import { adminMiddleware } from "../middleware/admin.middleware";
 import uploadBuffer from "../config/csv-buffer";
@@ -30,7 +30,7 @@ router.put("/admin/update", adminMiddleware,updateAdmin); // Route to update a c
 
 router.get("/products", adminMiddleware,getAllProducts);
 router.get("/p/", adminMiddleware,getProductById);
-router.get("/search", adminMiddleware,searchProducts);
+router.get("/products/search",searchProducts);
 router.get("/users", adminMiddleware,getAllUsers);
 router.get("/orders", adminMiddleware,getAllOrders);
 router.put("/update/order", adminMiddleware,changeOrderStatus);
@@ -49,6 +49,8 @@ router.post("/cashback/create", adminMiddleware,createCashback);
 router.get("/cashback", adminMiddleware,getAllCashback);
 router.put("/cashback/status", adminMiddleware,changeCashbackActiveStatus);
 
+
+router.get("/orders/id",getOrderByOrderId);
 
 router.post("/wallet/add", adminMiddleware,manualWalletCredit);
 

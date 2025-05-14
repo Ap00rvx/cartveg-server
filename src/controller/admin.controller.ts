@@ -226,50 +226,75 @@ export const getProductById = async (req: Request, res: Response): Promise<void>
 }
 
 export const searchProducts = async (req: Request, res: Response): Promise<void> => {
-    try{
-        const query = (req.query.query as string)?.trim().toLowerCase();
+    try {
+        // Extract query parameters with defaults
+        let { query, page = "1", limit = "10", sort = "createdAt", order = "desc", category, isAvailable } = req.query;
 
-        if (!query) {
-            res.status(400).json({ message: "Query parameter is required" });
+        // Validate query parameter
+        if (!query || typeof query !== 'string' || query.trim() === '') {
+            res.status(400).json({
+                statusCode: 400,
+                message: 'Query parameter is required',
+            });
             return;
         }
 
-        // Check cache first
-        const cachedProducts = cache.get("allProducts") as any[];
-        if (cachedProducts) {
-            console.log("Serving from cache");
-            const filteredProducts = cachedProducts.filter(product =>
-                product.name.toLowerCase().includes(query)
-            ).slice(0, 20);
-            
-            res.status(200).json({ statusCode: 200, data: filteredProducts });
-            return;
+        // Convert query params to numbers where needed
+        const pageNumber = Math.max(1, parseInt(page as string, 10));
+        const limitNumber = Math.max(1, parseInt(limit as string, 10));
+        const skip = (pageNumber - 1) * limitNumber;
+
+        // Sorting configuration
+        const sortOrder: SortOrder = order === 'asc' ? 1 : -1;
+        const sortQuery: { [key: string]: SortOrder } = { [sort as string]: sortOrder };
+
+        // Construct filtering criteria
+        const filter: any = {
+            name: { $regex: new RegExp(query.trim(), 'i') }, // Case-insensitive search in name
+        };
+
+        if (isAvailable !== undefined) {
+            filter.isAvailable = isAvailable === '1';
         }
 
-        console.log("Fetching from database...");
-        
-        // Fetch from DB and cache it
-        const products = await Product.find({
-            
+        if (category) {
+            filter.category = { $regex: new RegExp(category as string, 'i') }; // Case-insensitive category search
+        }
+
+        // Fetch products with filtering, sorting, and pagination
+        const products = await Product.find(filter)
+            .sort(sortQuery)
+            .skip(skip)
+            .limit(limitNumber)
+            .exec();
+
+        // Count total products for pagination metadata
+        const totalProducts = await Product.countDocuments(filter);
+        const totalPages = Math.ceil(totalProducts / limitNumber);
+
+        // Send response
+        res.status(200).json({
+            statusCode: 200,
+            message: 'Products retrieved successfully',
+            data: {
+                products,
+                pagination: {
+                    currentPage: pageNumber,
+                    totalPages,
+                    totalProducts,
+                    limit: limitNumber,
+                },
+            },
         });
-        cache.set("allProducts", products);
-
-        // Filter results
-        const filteredProducts = products.filter(product =>
-            product.name.toLowerCase().includes(query)
-        ).slice(0, 20);
-
-        res.status(200).json({ statusCode: 200, data: filteredProducts });
-    }
-    catch(err:any){
+    } catch (err: any) {
+        console.error('Error searching products:', err);
         res.status(500).json({
             statusCode: 500,
-            message: "Internal server error",
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+            message: 'Internal server error',
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
         });
     }
-
-}
+};
 export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
     try {
         const query = req.query.role as string;
@@ -646,6 +671,44 @@ export const getAllOrders = async (req: Request, res: Response): Promise<void> =
         res.status(500).json({ error: "Internal server error" });
     }
 };
+export const getOrderByOrderId = async (req: Request, res: Response): Promise<void> => {
+    try {
+        // Extract orderId from request parameters
+        const { orderId } = req.query;
+
+        // Validate orderId
+        if (!orderId) {
+            res.status(400).json({ error: 'Order ID is required' });
+            return;
+        }
+
+        // Fetch the order by orderId
+        const order = await Order.findOne({orderId})
+            .populate('userId', 'name email phone')
+            .populate({
+                path: 'products.productId',
+                model: 'Product',
+                select: 'name price image stock category',
+            })
+            .populate('storeId', 'name address phone email openingTime', 'Store')
+            .exec();
+
+        // Check if order exists
+        if (!order) {
+            res.status(404).json({ error: 'Order not found' });
+            return;
+        }
+
+        res.status(200).json({
+            message: 'Order fetched successfully',
+            order,
+        });
+      } catch (error) {
+        console.error('Error fetching order:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
 
 export const sendNotification = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -1567,7 +1630,7 @@ interface PaginationQuery {
   
 export const getAllAdmins = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { page = '1', limit = '10', role, isActive }: PaginationQuery = req.query;
+      const { page = '1', limit = '1000', role, isActive }: PaginationQuery = req.query;
       
       // Parse pagination parameters
       const pageNumber = parseInt(page, 10);
